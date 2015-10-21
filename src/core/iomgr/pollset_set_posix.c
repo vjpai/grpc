@@ -39,6 +39,7 @@
 #include <string.h>
 
 #include <grpc/support/alloc.h>
+#include <grpc/support/log.h>
 #include <grpc/support/useful.h>
 
 #include "src/core/iomgr/pollset_set.h"
@@ -103,6 +104,7 @@ void grpc_pollset_set_add_fd(grpc_exec_ctx *exec_ctx,
                              grpc_pollset_set *pollset_set, grpc_fd *fd) {
   size_t i;
   gpr_mu_lock(&pollset_set->mu);
+  gpr_log(GPR_INFO, "pollset %p add fd %d", pollset_set, fd->fd);
   if (pollset_set->fd_count == pollset_set->fd_capacity) {
     pollset_set->fd_capacity = GPR_MAX(8, 2 * pollset_set->fd_capacity);
     pollset_set->fds = gpr_realloc(
@@ -120,6 +122,7 @@ void grpc_pollset_set_del_fd(grpc_exec_ctx *exec_ctx,
                              grpc_pollset_set *pollset_set, grpc_fd *fd) {
   size_t i;
   gpr_mu_lock(&pollset_set->mu);
+  gpr_log(GPR_INFO, "pollset %p del fd %d", pollset_set, fd->fd);
   for (i = 0; i < pollset_set->fd_count; i++) {
     if (pollset_set->fds[i] == fd) {
       pollset_set->fd_count--;

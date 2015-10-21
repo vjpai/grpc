@@ -523,19 +523,25 @@ TEST_P(End2endTest, BidiStream) {
 
   auto stream = stub_->BidiStream(&context);
 
+  gpr_log(GPR_INFO, "bidi0s");
   request.set_message(msg + "0");
   EXPECT_TRUE(stream->Write(request));
   EXPECT_TRUE(stream->Read(&response));
+  gpr_log(GPR_INFO, "bidi0e");
   EXPECT_EQ(response.message(), request.message());
 
+  gpr_log(GPR_INFO, "bidi1s");
   request.set_message(msg + "1");
   EXPECT_TRUE(stream->Write(request));
   EXPECT_TRUE(stream->Read(&response));
+  gpr_log(GPR_INFO, "bidi1e");
   EXPECT_EQ(response.message(), request.message());
 
+  gpr_log(GPR_INFO, "bidi2s");
   request.set_message(msg + "2");
   EXPECT_TRUE(stream->Write(request));
   EXPECT_TRUE(stream->Read(&response));
+  gpr_log(GPR_INFO, "bidi2e");
   EXPECT_EQ(response.message(), request.message());
 
   stream->WritesDone();

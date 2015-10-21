@@ -157,7 +157,10 @@ static void multipoll_with_poll_pollset_maybe_work_and_unlock(
   /* TODO(vpai): Consider first doing a 0 timeout poll here to avoid
      even going into the blocking annotation if possible */
   GRPC_SCHEDULING_START_BLOCKING_REGION;
+  gpr_log(GPR_INFO, "pf-pre %p %d.%09d %d.%09d", pollset, now.tv_sec, now.tv_nsec,
+          deadline.tv_sec, deadline.tv_nsec);
   r = grpc_poll_function(pfds, pfd_count, timeout);
+  gpr_log(GPR_INFO, "pf-post %p", pollset);
   GRPC_SCHEDULING_END_BLOCKING_REGION;
 
   if (r < 0) {
