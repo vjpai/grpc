@@ -49,6 +49,7 @@
 #include "src/core/debug/trace.h"
 #include "src/core/iomgr/iomgr.h"
 #include "src/core/profiling/timers.h"
+#include "src/core/support/dbg_log_mem.h"
 #include "src/core/surface/api_trace.h"
 #include "src/core/surface/call.h"
 #include "src/core/surface/init.h"
@@ -121,6 +122,7 @@ void grpc_init(void) {
         g_all_of_the_plugins[i].init();
       }
     }
+    gpr_dbg_log_init();
   }
   gpr_mu_unlock(&g_init_mu);
   GRPC_API_TRACE("grpc_init(void)", 0, ());
@@ -141,6 +143,7 @@ void grpc_shutdown(void) {
         g_all_of_the_plugins[i].destroy();
       }
     }
+    gpr_dbg_log_destroy();
   }
   gpr_mu_unlock(&g_init_mu);
 }
