@@ -38,6 +38,7 @@
 
 #include "src/core/iomgr/timer.h"
 #include "src/core/iomgr/pollset.h"
+#include "src/core/support/dbg_log_mem.h"
 #include "src/core/support/string.h"
 #include "src/core/surface/api_trace.h"
 #include "src/core/surface/call.h"
@@ -156,6 +157,7 @@ void grpc_cq_end_op(grpc_exec_ctx *exec_ctx, grpc_completion_queue *cc,
   grpc_pollset_worker *pluck_worker;
 
   GPR_TIMER_BEGIN("grpc_cq_end_op", 0);
+  gpr_dbg_log_add("cq-end-op", sizeof(cc), &cc);
 
   storage->tag = tag;
   storage->done = done;
@@ -201,6 +203,7 @@ grpc_event grpc_completion_queue_next(grpc_completion_queue *cc,
   grpc_exec_ctx exec_ctx = GRPC_EXEC_CTX_INIT;
 
   GPR_TIMER_BEGIN("grpc_completion_queue_next", 0);
+  gpr_dbg_log_add("cq-next-begin", sizeof(cc), &cc);
 
   GRPC_API_TRACE(
       "grpc_completion_queue_next("
@@ -250,6 +253,7 @@ grpc_event grpc_completion_queue_next(grpc_completion_queue *cc,
   grpc_exec_ctx_finish(&exec_ctx);
 
   GPR_TIMER_END("grpc_completion_queue_next", 0);
+  gpr_dbg_log_add("cq-next-end", sizeof(cc), &cc);
 
   return ret;
 }
@@ -289,6 +293,7 @@ grpc_event grpc_completion_queue_pluck(grpc_completion_queue *cc, void *tag,
   grpc_exec_ctx exec_ctx = GRPC_EXEC_CTX_INIT;
 
   GPR_TIMER_BEGIN("grpc_completion_queue_pluck", 0);
+  gpr_dbg_log_add("cq-pluck-begin", sizeof(cc), &cc);
 
   GRPC_API_TRACE(
       "grpc_completion_queue_pluck("
@@ -357,6 +362,7 @@ done:
   grpc_exec_ctx_finish(&exec_ctx);
 
   GPR_TIMER_END("grpc_completion_queue_pluck", 0);
+  gpr_dbg_log_add("cq-pluck-end", sizeof(cc), &cc);
 
   return ret;
 }

@@ -49,6 +49,7 @@
 #include <gtest/gtest.h>
 
 #include "src/core/security/credentials.h"
+#include "src/core/support/dbg_log_mem.h"
 #include "test/core/end2end/data/ssl_test_data.h"
 #include "test/core/util/port.h"
 #include "test/core/util/test_config.h"
@@ -321,10 +322,18 @@ class TestServiceImpl : public ::grpc::cpp::test::util::TestService::Service {
       GRPC_OVERRIDE {
     EchoRequest request;
     EchoResponse response;
-    while (stream->Read(&request)) {
+    while (1) {
+      int ret;
+      gpr_dbg_log_add("server-read-pre", 0, NULL);
+      ret = stream->Read(&request);
+      gpr_dbg_log_add("server-read-post", 0, NULL);
+      if (!ret) break;
+
       gpr_log(GPR_INFO, "recv msg %s", request.message().c_str());
       response.set_message(request.message());
+      gpr_dbg_log_add("server-write-pre", 0, NULL);
       stream->Write(response);
+      gpr_dbg_log_add("server-write-post", 0, NULL);
     }
     return Status::OK;
   }
@@ -523,25 +532,31 @@ TEST_P(End2endTest, BidiStream) {
 
   auto stream = stub_->BidiStream(&context);
 
-  gpr_log(GPR_INFO, "bidi0s");
+  gpr_dbg_log_add("msg0-write-pre", 0, NULL);
   request.set_message(msg + "0");
   EXPECT_TRUE(stream->Write(request));
+  gpr_dbg_log_add("msg0-write-post", 0, NULL);
+  gpr_dbg_log_add("msg0-read-post", 0, NULL);
   EXPECT_TRUE(stream->Read(&response));
-  gpr_log(GPR_INFO, "bidi0e");
+  gpr_dbg_log_add("msg0-read-post", 0, NULL);
   EXPECT_EQ(response.message(), request.message());
 
-  gpr_log(GPR_INFO, "bidi1s");
+  gpr_dbg_log_add("msg1-write-pre", 0, NULL);
   request.set_message(msg + "1");
   EXPECT_TRUE(stream->Write(request));
+  gpr_dbg_log_add("msg1-write-post", 0, NULL);
+  gpr_dbg_log_add("msg1-read-pre", 0, NULL);
   EXPECT_TRUE(stream->Read(&response));
-  gpr_log(GPR_INFO, "bidi1e");
+  gpr_dbg_log_add("msg1-read-post", 0, NULL);
   EXPECT_EQ(response.message(), request.message());
 
-  gpr_log(GPR_INFO, "bidi2s");
+  gpr_dbg_log_add("msg2-write-pre", 0, NULL);
   request.set_message(msg + "2");
   EXPECT_TRUE(stream->Write(request));
+  gpr_dbg_log_add("msg2-write-post", 0, NULL);
+  gpr_dbg_log_add("msg2-read-pre", 0, NULL);
   EXPECT_TRUE(stream->Read(&response));
-  gpr_log(GPR_INFO, "bidi2e");
+  gpr_dbg_log_add("msg2-read-post", 0, NULL);
   EXPECT_EQ(response.message(), request.message());
 
   stream->WritesDone();

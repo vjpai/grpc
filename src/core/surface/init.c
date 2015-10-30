@@ -143,6 +143,7 @@ void grpc_shutdown(void) {
         g_all_of_the_plugins[i].destroy();
       }
     }
+    gpr_dbg_log_report();
     gpr_dbg_log_destroy();
   }
   gpr_mu_unlock(&g_init_mu);

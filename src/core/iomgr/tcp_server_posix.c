@@ -60,6 +60,7 @@
 #include "src/core/iomgr/sockaddr_utils.h"
 #include "src/core/iomgr/socket_utils_posix.h"
 #include "src/core/iomgr/tcp_posix.h"
+#include "src/core/support/dbg_log_mem.h"
 #include "src/core/support/string.h"
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -269,6 +270,7 @@ static int prepare_socket(int fd, const struct sockaddr *addr,
   }
 
   GPR_ASSERT(addr_len < ~(socklen_t)0);
+  gpr_dbg_log_add("bind-addr", (gpr_uint16)addr_len, addr);
   if (bind(fd, addr, (socklen_t)addr_len) < 0) {
     char *addr_str;
     grpc_sockaddr_to_string(&addr_str, addr, 0);
@@ -277,6 +279,7 @@ static int prepare_socket(int fd, const struct sockaddr *addr,
     goto error;
   }
 
+  gpr_dbg_log_add("listen-fd", sizeof(fd), &fd);
   if (listen(fd, get_max_accept_queue_size()) < 0) {
     gpr_log(GPR_ERROR, "listen: %s", strerror(errno));
     goto error;
@@ -312,9 +315,12 @@ static void on_read(grpc_exec_ctx *exec_ctx, void *arg, int success) {
     socklen_t addrlen = sizeof(addr);
     char *addr_str;
     char *name;
+    int fd;
     /* Note: If we ever decide to return this address to the user, remember to
        strip off the ::ffff:0.0.0.0/96 prefix first. */
-    int fd = grpc_accept4(sp->fd, (struct sockaddr *)&addr, &addrlen, 1, 1);
+    gpr_dbg_log_add("accept-fd", sizeof(sp->fd), &sp->fd);
+    fd = grpc_accept4(sp->fd, (struct sockaddr *)&addr, &addrlen, 1, 1);
+    gpr_dbg_log_add("accept-res", sizeof(fd), &fd);
     if (fd < 0) {
       switch (errno) {
         case EINTR:

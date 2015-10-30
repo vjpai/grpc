@@ -244,6 +244,7 @@ static void notify_on_locked(grpc_exec_ctx *exec_ctx, grpc_fd *fd,
   if (*st == CLOSURE_NOT_READY) {
     /* not ready ==> switch to a waiting state by setting the closure */
     *st = closure;
+    maybe_wake_one_watcher_locked(fd);
   } else if (*st == CLOSURE_READY) {
     /* already ready ==> queue the closure to run immediately */
     *st = CLOSURE_NOT_READY;
@@ -331,7 +332,7 @@ gpr_uint32 grpc_fd_begin_poll(grpc_fd *fd, grpc_pollset *pollset,
 
   /* if there is nobody polling for read, but we need to, then start doing so */
   cur = fd->read_closure;
-  requested = cur != CLOSURE_READY;
+  requested = ((cur != CLOSURE_READY) && (cur != CLOSURE_NOT_READY));
   if (read_mask && fd->read_watcher == NULL && requested) {
     fd->read_watcher = watcher;
     mask |= read_mask;
@@ -339,7 +340,7 @@ gpr_uint32 grpc_fd_begin_poll(grpc_fd *fd, grpc_pollset *pollset,
   /* if there is nobody polling for write, but we need to, then start doing so
    */
   cur = fd->write_closure;
-  requested = cur != CLOSURE_READY;
+  requested = ((cur != CLOSURE_READY) && (cur != CLOSURE_NOT_READY));
   if (write_mask && fd->write_watcher == NULL && requested) {
     fd->write_watcher = watcher;
     mask |= write_mask;

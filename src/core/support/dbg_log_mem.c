@@ -31,10 +31,30 @@
  *
  */
 
+#ifdef __linux__
+#ifndef _POSIX_SOURCE
+#define _POSIX_SOURCE
+#endif
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <linux/unistd.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+
+#else
+#include <pthread.h>
+#endif
+
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 
+#include <grpc/support/port_platform.h>
 #include <grpc/support/sync.h>
+#include <grpc/support/time.h>
 
 #include "src/core/support/block_annotate.h"
 #include "src/core/support/dbg_log_mem.h"
@@ -43,6 +63,21 @@
 static gpr_uint8 g_dbg_log[MAXSIZE];
 static size_t g_dbg_log_end;
 static gpr_mu g_dbg_log_mu;
+
+static long gettid(void) {
+#ifdef GPR_LINUX
+  return syscall(__NR_gettid);
+#else
+  return (long)pthread_self();
+#endif
+}
+
+struct dbg_entry {
+  gpr_uint64 tid;
+  struct gpr_timespec now;
+  const char *tag;
+  gpr_uint16 size;
+};
 
 void gpr_dbg_log_init() {
   g_dbg_log_end = 0;
@@ -53,16 +88,21 @@ void gpr_dbg_log_destroy() {
   gpr_mu_destroy(&g_dbg_log_mu);
 }
 
-void gpr_dbg_log_add(gpr_uint16 tag, gpr_uint16 size, void *obj) {
+void gpr_dbg_log_add(const char *tag, gpr_uint16 size, const void *obj) {
+  struct dbg_entry entry;
+
+  entry.now = gpr_now(GPR_CLOCK_MONOTONIC);
+  entry.tid = (gpr_uint64)gettid();
+  entry.tag = tag;
+  entry.size = size;
+
   gpr_mu_lock(&g_dbg_log_mu);
-  if (g_dbg_log_end + size + sizeof(tag) + sizeof(size) > MAXSIZE) {
+  if (g_dbg_log_end + size + sizeof(entry) > MAXSIZE) {
     /* This implementation only allows a limited size log. */
     g_dbg_log_end = 0;
   }
-  memcpy(g_dbg_log+g_dbg_log_end, &tag, sizeof(tag));
-  g_dbg_log_end += sizeof(tag);
-  memcpy(g_dbg_log+g_dbg_log_end, &size, sizeof(size));
-  g_dbg_log_end += sizeof(size);
+  memcpy(g_dbg_log+g_dbg_log_end, &entry, sizeof(entry));
+  g_dbg_log_end += sizeof(entry);
   memcpy(g_dbg_log+g_dbg_log_end, obj, size);
   g_dbg_log_end += size;
 
@@ -71,13 +111,56 @@ void gpr_dbg_log_add(gpr_uint16 tag, gpr_uint16 size, void *obj) {
 
 void gpr_dbg_log_report() {
   FILE *file;
+  char filename[256];
+  struct timeval tv;
+  struct dbg_entry entry;
+  size_t posn;
+  size_t i;
+  int first_seen = 0;
+  struct dbg_entry entry_first;
+
+  gettimeofday(&tv, NULL);
+  sprintf(filename, "dbg-log-%d-%06d.log", (int)tv.tv_sec, (int)tv.tv_usec);
   GRPC_SCHEDULING_START_BLOCKING_REGION;
-  file = fopen("dbg-log.log", "wb");
+  file = fopen(filename, "wb");
   if (file == NULL)
     goto end;
 
   gpr_mu_lock(&g_dbg_log_mu);
-  fwrite(g_dbg_log, sizeof(g_dbg_log[0]), g_dbg_log_end, file);
+  for (posn = 0; posn < g_dbg_log_end; ) {
+    entry = *((struct dbg_entry *)(g_dbg_log+posn));
+    posn += sizeof(entry);
+    if (!first_seen) {
+      first_seen = 1;
+      entry_first = entry;
+    }
+    fprintf(file, "T %lu %u.%09u %s size %u",
+            (unsigned long)entry.tid, (unsigned)entry.now.tv_sec,
+            (unsigned)entry.now.tv_nsec, entry.tag,
+            (unsigned)entry.size);
+    if (entry.size == sizeof(unsigned)) {
+      fprintf(file, " (value 0x%x)", *((unsigned*)(g_dbg_log+posn)));
+    } else if (entry.size == sizeof(unsigned long)) {
+      fprintf(file, " (value 0x%lx)", *((unsigned long*)(g_dbg_log+posn)));
+    }
+
+    fprintf(file, "\n");
+    for (i=0; i<entry.size; i++, posn++) {
+      if (i && !(i&0xf))
+        fprintf(file, "\n");
+      else if (i)
+        fprintf(file, " ");
+      fprintf(file, "%02x", *((gpr_uint8*)(g_dbg_log+posn)));
+    }
+    if (entry.size)
+      fprintf(file, "\n");
+  }
+  if (first_seen) {
+    struct gpr_timespec dur;
+    dur = gpr_time_sub(entry.now, entry_first.now);
+    fprintf(file, "\nTotal log time %u.%09u\n", (unsigned)dur.tv_sec,
+            (unsigned)dur.tv_nsec);
+  }
   gpr_mu_unlock(&g_dbg_log_mu);
 
   fclose(file);

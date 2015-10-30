@@ -48,6 +48,7 @@
 #include "src/core/iomgr/socket_utils_posix.h"
 #include "src/core/profiling/timers.h"
 #include "src/core/support/block_annotate.h"
+#include "src/core/support/dbg_log_mem.h"
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
 #include <grpc/support/thd.h>
@@ -111,6 +112,9 @@ void grpc_pollset_kick_ext(grpc_pollset *p,
       for (specific_worker = p->root_worker.next;
            specific_worker != &p->root_worker;
            specific_worker = specific_worker->next) {
+        gpr_dbg_log_add("wakeup1-called",
+                        sizeof(specific_worker->wakeup_fd.read_fd),
+                        &specific_worker->wakeup_fd.read_fd);
         grpc_wakeup_fd_wakeup(&specific_worker->wakeup_fd);
       }
       p->kicked_without_pollers = 1;
@@ -121,12 +125,18 @@ void grpc_pollset_kick_ext(grpc_pollset *p,
       if ((flags & GRPC_POLLSET_REEVALUATE_POLLING_ON_WAKEUP) != 0) {
         specific_worker->reevaluate_polling_on_wakeup = 1;
       }
+      gpr_dbg_log_add("wakeup2-called",
+                      sizeof(specific_worker->wakeup_fd.read_fd),
+                      &specific_worker->wakeup_fd.read_fd);
       grpc_wakeup_fd_wakeup(&specific_worker->wakeup_fd);
     } else if ((flags & GRPC_POLLSET_CAN_KICK_SELF) != 0) {
       GPR_TIMER_MARK("kick_yoself", 0);
       if ((flags & GRPC_POLLSET_REEVALUATE_POLLING_ON_WAKEUP) != 0) {
         specific_worker->reevaluate_polling_on_wakeup = 1;
       }
+      gpr_dbg_log_add("wakeup3-called",
+                      sizeof(specific_worker->wakeup_fd.read_fd),
+                      &specific_worker->wakeup_fd.read_fd);
       grpc_wakeup_fd_wakeup(&specific_worker->wakeup_fd);
     }
   } else if (gpr_tls_get(&g_current_thread_poller) != (gpr_intptr)p) {
@@ -149,6 +159,9 @@ void grpc_pollset_kick_ext(grpc_pollset *p,
       if (specific_worker != NULL) {
         GPR_TIMER_MARK("finally_kick", 0);
         push_back_worker(p, specific_worker);
+        gpr_dbg_log_add("wakeup4-called",
+                        sizeof(specific_worker->wakeup_fd.read_fd),
+                        &specific_worker->wakeup_fd.read_fd);
         grpc_wakeup_fd_wakeup(&specific_worker->wakeup_fd);
       }
     } else {
@@ -180,7 +193,12 @@ void grpc_pollset_global_shutdown(void) {
   gpr_tls_destroy(&g_current_thread_worker);
 }
 
-void grpc_kick_poller(void) { grpc_wakeup_fd_wakeup(&grpc_global_wakeup_fd); }
+void grpc_kick_poller(void) {
+  gpr_dbg_log_add("wakeup-global-called",
+                  sizeof(&grpc_global_wakeup_fd.read_fd),
+                  &grpc_global_wakeup_fd.read_fd);
+  grpc_wakeup_fd_wakeup(&grpc_global_wakeup_fd);
+}
 
 /* main interface */
 
@@ -380,7 +398,8 @@ int grpc_poll_deadline_to_millis_timeout(gpr_timespec deadline,
   gpr_timespec timeout;
   static const int max_spin_polling_us = 10;
   if (gpr_time_cmp(deadline, gpr_inf_future(deadline.clock_type)) == 0) {
-    return -1;
+    return 10000; /* prevent infinite pause for now */
+    /* return -1; */
   }
   if (gpr_time_cmp(deadline, gpr_time_add(now, gpr_time_from_micros(
                                                    max_spin_polling_us,
@@ -576,6 +595,8 @@ static void basic_pollset_maybe_work_and_unlock(grpc_exec_ctx *exec_ctx,
      even going into the blocking annotation if possible */
   /* poll fd count (argument 2) is shortened by one if we have no events
      to poll on - such that it only includes the kicker */
+  gpr_dbg_log_add("poller-deadline", sizeof(deadline), &deadline);
+  gpr_dbg_log_add("poller-pfds", (gpr_uint16)(nfds*sizeof(pfd[0])), pfd);
   GPR_TIMER_BEGIN("poll", 0);
   GRPC_SCHEDULING_START_BLOCKING_REGION;
   r = grpc_poll_function(pfd, nfds, timeout);
@@ -584,14 +605,18 @@ static void basic_pollset_maybe_work_and_unlock(grpc_exec_ctx *exec_ctx,
 
   if (r < 0) {
     gpr_log(GPR_ERROR, "poll() failed: %s", strerror(errno));
+    gpr_dbg_log_add("poller-failure", 0, NULL);
     if (fd) {
       grpc_fd_end_poll(exec_ctx, &fd_watcher, 0, 0);
     }
   } else if (r == 0) {
+    gpr_dbg_log_add("poller-timeout", 0, NULL);
     if (fd) {
       grpc_fd_end_poll(exec_ctx, &fd_watcher, 0, 0);
     }
   } else {
+    gpr_dbg_log_add("poller-pfds-result", (gpr_uint16)(nfds*sizeof(pfd[0])),
+                    pfd);
     if (pfd[0].revents & POLLIN_CHECK) {
       grpc_wakeup_fd_consume_wakeup(&grpc_global_wakeup_fd);
     }

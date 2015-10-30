@@ -65,6 +65,7 @@ Pod::Spec.new do |s|
   s.subspec 'C-Core' do |ss|
     ss.source_files = 'src/core/profiling/timers.h',
                       'src/core/support/block_annotate.h',
+                      'src/core/support/dbg_log_mem.h',
                       'src/core/support/env.h',
                       'src/core/support/file.h',
                       'src/core/support/murmur_hash.h',
@@ -108,6 +109,7 @@ Pod::Spec.new do |s|
                       'src/core/support/cpu_linux.c',
                       'src/core/support/cpu_posix.c',
                       'src/core/support/cpu_windows.c',
+                      'src/core/support/dbg_log_mem.c',
                       'src/core/support/env_linux.c',
                       'src/core/support/env_posix.c',
                       'src/core/support/env_win32.c',
@@ -422,6 +424,7 @@ Pod::Spec.new do |s|
 
     ss.private_header_files = 'src/core/profiling/timers.h',
                               'src/core/support/block_annotate.h',
+                              'src/core/support/dbg_log_mem.h',
                               'src/core/support/env.h',
                               'src/core/support/file.h',
                               'src/core/support/murmur_hash.h',

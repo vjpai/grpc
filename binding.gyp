@@ -90,6 +90,7 @@
         'src/core/support/cpu_linux.c',
         'src/core/support/cpu_posix.c',
         'src/core/support/cpu_windows.c',
+        'src/core/support/dbg_log_mem.c',
         'src/core/support/env_linux.c',
         'src/core/support/env_posix.c',
         'src/core/support/env_win32.c',

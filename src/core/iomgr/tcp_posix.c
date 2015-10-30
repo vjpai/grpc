@@ -51,6 +51,7 @@
 #include <grpc/support/sync.h>
 #include <grpc/support/time.h>
 
+#include "src/core/support/dbg_log_mem.h"
 #include "src/core/support/string.h"
 #include "src/core/debug/trace.h"
 #include "src/core/profiling/timers.h"
@@ -201,7 +202,13 @@ static void tcp_continue_read(grpc_exec_ctx *exec_ctx, grpc_tcp *tcp) {
 
   GPR_TIMER_BEGIN("recvmsg", 1);
   do {
+    gpr_dbg_log_add("recvmsg-fd", sizeof(tcp->fd), &tcp->fd);
     read_bytes = recvmsg(tcp->fd, &msg, 0);
+    if (read_bytes >=0) {
+      gpr_dbg_log_add("recvmsg-read_bytes", sizeof(read_bytes), &read_bytes);
+    } else {
+      gpr_dbg_log_add("recvmsg-errno", sizeof(errno), &errno);
+    }
   } while (read_bytes < 0 && errno == EINTR);
   GPR_TIMER_END("recvmsg", 0);
 
@@ -319,7 +326,14 @@ static flush_result tcp_flush(grpc_tcp *tcp) {
     GPR_TIMER_BEGIN("sendmsg", 1);
     do {
       /* TODO(klempner): Cork if this is a partial write */
+      gpr_dbg_log_add("sendmsg-fd", sizeof(tcp->fd), &tcp->fd);
       sent_length = sendmsg(tcp->fd, &msg, SENDMSG_FLAGS);
+      if (sent_length >= 0) {
+        gpr_dbg_log_add("sendmsg-sent_length", sizeof(sent_length),
+                        &sent_length);
+      } else {
+        gpr_dbg_log_add("sendmsg-errno", sizeof(errno), &errno);
+      }
     } while (sent_length < 0 && errno == EINTR);
     GPR_TIMER_END("sendmsg", 0);
 

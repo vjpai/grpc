@@ -48,6 +48,7 @@
 #include "src/core/iomgr/sockaddr_utils.h"
 #include "src/core/iomgr/socket_utils_posix.h"
 #include "src/core/iomgr/tcp_posix.h"
+#include "src/core/support/dbg_log_mem.h"
 #include "src/core/support/string.h"
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -247,10 +248,12 @@ void grpc_tcp_client_connect(grpc_exec_ctx *exec_ctx, grpc_closure *closure,
     return;
   }
 
+  gpr_dbg_log_add("connect-addr", (gpr_uint16)addr_len, addr);
   do {
     GPR_ASSERT(addr_len < ~(socklen_t)0);
     err = connect(fd, addr, (socklen_t)addr_len);
   } while (err < 0 && errno == EINTR);
+  gpr_dbg_log_add("connect-success", sizeof(fd), &fd);
 
   addr_str = grpc_sockaddr_to_uri(addr);
   gpr_asprintf(&name, "tcp-client:%s", addr_str);

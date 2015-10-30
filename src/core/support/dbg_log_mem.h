@@ -40,7 +40,7 @@
 extern "C" {
 #endif
 
-void gpr_dbg_log_add(gpr_uint16 tag, gpr_uint16 size, void *obj);
+void gpr_dbg_log_add(const char *tag, gpr_uint16 size, const void *obj);
 void gpr_dbg_log_report();
 void gpr_dbg_log_init();
 void gpr_dbg_log_destroy();

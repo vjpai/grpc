@@ -45,6 +45,7 @@
 #include "src/core/iomgr/fd_posix.h"
 #include "src/core/iomgr/iomgr_internal.h"
 #include "src/core/support/block_annotate.h"
+#include "src/core/support/dbg_log_mem.h"
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
 #include <grpc/support/useful.h>
@@ -156,23 +157,26 @@ static void multipoll_with_poll_pollset_maybe_work_and_unlock(
 
   /* TODO(vpai): Consider first doing a 0 timeout poll here to avoid
      even going into the blocking annotation if possible */
+  gpr_dbg_log_add("multipoller-deadline", sizeof(deadline), &deadline);
+  gpr_dbg_log_add("multipoller-pfds", (gpr_uint16)(pfd_count*sizeof(pfds[0])), pfds);
   GRPC_SCHEDULING_START_BLOCKING_REGION;
-  gpr_log(GPR_INFO, "pf-pre %p %d.%09d %d.%09d", pollset, now.tv_sec, now.tv_nsec,
-          deadline.tv_sec, deadline.tv_nsec);
   r = grpc_poll_function(pfds, pfd_count, timeout);
-  gpr_log(GPR_INFO, "pf-post %p", pollset);
   GRPC_SCHEDULING_END_BLOCKING_REGION;
 
   if (r < 0) {
     gpr_log(GPR_ERROR, "poll() failed: %s", strerror(errno));
+    gpr_dbg_log_add("multipoller-failure", 0, NULL);
     for (i = 2; i < pfd_count; i++) {
       grpc_fd_end_poll(exec_ctx, &watchers[i], 0, 0);
     }
   } else if (r == 0) {
+    gpr_dbg_log_add("multipoller-timeout", 0, NULL);
     for (i = 2; i < pfd_count; i++) {
       grpc_fd_end_poll(exec_ctx, &watchers[i], 0, 0);
     }
   } else {
+    gpr_dbg_log_add("multipoller-pfds-result",
+                    (gpr_uint16)(pfd_count*sizeof(pfds[0])), pfds);
     if (pfds[0].revents & POLLIN_CHECK) {
       grpc_wakeup_fd_consume_wakeup(&grpc_global_wakeup_fd);
     }
