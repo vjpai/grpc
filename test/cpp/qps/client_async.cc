@@ -165,12 +165,13 @@ class AsyncClient : public ClientImpl<StubType, RequestType> {
               std::function<std::unique_ptr<StubType>(std::shared_ptr<Channel>)>
                   create_stub)
       : ClientImpl<StubType, RequestType>(config, create_stub),
+        num_async_threads_(NumThreads(config)),
         channel_lock_(new std::mutex[config.client_channels()]),
         contexts_(config.client_channels()),
         max_outstanding_per_channel_(config.outstanding_rpcs_per_channel()),
         channel_count_(config.client_channels()),
-        pref_channel_inc_(config.async_client_threads()) {
-    SetupLoadTest(config, config.async_client_threads());
+        pref_channel_inc_(num_async_threads_) {
+    SetupLoadTest(config, num_async_threads_);
 
     for (int i = 0; i < config.async_client_threads(); i++) {
       cli_cqs_.emplace_back(new CompletionQueue);
@@ -325,6 +326,8 @@ class AsyncClient : public ClientImpl<StubType, RequestType> {
     return true;
   }
 
+ protected:
+  int num_async_threads_;
  private:
   class boolean {  // exists only to avoid data-race on vector<bool>
    public:
@@ -339,6 +342,15 @@ class AsyncClient : public ClientImpl<StubType, RequestType> {
    private:
     bool val_;
   };
+  static int NumThreads(const ClientConfig& config) {
+    int num_threads = config.async_client_threads();
+    if (num_threads <= 0) { // Use dynamic sizing
+      num_threads = gpr_cpu_num_cores();
+      gpr_log(GPR_INFO, "Sizing async client to %d threads\n", num_threads);
+    }
+    return num_threads;
+  }
+
   std::vector<std::unique_ptr<CompletionQueue>> cli_cqs_;
 
   std::vector<deadline_list> rpc_deadlines_;  // per thread deadlines
@@ -359,21 +371,12 @@ static std::unique_ptr<BenchmarkService::Stub> BenchmarkStubCreator(
   return BenchmarkService::NewStub(ch);
 }
 
-static int NumThreads(const ClientConfig& config) {
-  int num_threads = config.async_client_threads();
-  if (num_threads <= 0) { // Use dynamic sizing
-    num_threads = gpr_cpu_num_cores();
-    gpr_log(GPR_INFO, "Sizing async client to %d threads\n", num_threads);
-  }
-  return num_threads;
-}
-  
 class AsyncUnaryClient GRPC_FINAL
     : public AsyncClient<BenchmarkService::Stub, SimpleRequest> {
  public:
   explicit AsyncUnaryClient(const ClientConfig& config)
       : AsyncClient(config, SetupCtx, BenchmarkStubCreator) {
-    StartThreads(NumThreads(config));
+    StartThreads(num_async_threads_);
   }
   ~AsyncUnaryClient() GRPC_OVERRIDE { EndThreads(); }
 
@@ -471,7 +474,7 @@ class AsyncStreamingClient GRPC_FINAL
     // async streaming currently only supports closed loop
     GPR_ASSERT(closed_loop_);
 
-    StartThreads(NumThreads(config));
+    StartThreads(num_async_threads_);
   }
 
   ~AsyncStreamingClient() GRPC_OVERRIDE { EndThreads(); }
@@ -576,7 +579,7 @@ class GenericAsyncStreamingClient GRPC_FINAL
     // async streaming currently only supports closed loop
     GPR_ASSERT(closed_loop_);
 
-    StartThreads(NumThreads(config));
+    StartThreads(num_async_threads_);
   }
 
   ~GenericAsyncStreamingClient() GRPC_OVERRIDE { EndThreads(); }
