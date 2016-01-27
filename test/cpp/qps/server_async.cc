@@ -50,8 +50,8 @@
 #include <grpc/support/log.h>
 #include <gtest/gtest.h>
 
-#include "test/cpp/qps/server.h"
 #include "src/proto/grpc/testing/services.grpc.pb.h"
+#include "test/cpp/qps/server.h"
 
 namespace grpc {
 namespace testing {
@@ -72,7 +72,8 @@ class AsyncQpsServerTest : public Server {
                          CompletionQueue *, ServerCompletionQueue *, void *)>
           request_streaming_function,
       std::function<grpc::Status(const PayloadConfig &, const RequestType *,
-                                 ResponseType *)> process_rpc)
+                                 ResponseType *)>
+          process_rpc)
       : Server(config) {
     char *server_address = NULL;
 
@@ -86,7 +87,7 @@ class AsyncQpsServerTest : public Server {
     register_service(&builder, &async_service_);
 
     int num_threads = config.async_server_threads();
-    if (num_threads <= 0) { // dynamic sizing
+    if (num_threads <= 0) {  // dynamic sizing
       num_threads = cores();
       gpr_log(GPR_INFO, "Sizing async server to %d threads\n", num_threads);
     }
@@ -190,7 +191,8 @@ class AsyncQpsServerTest : public Server {
     ServerRpcContextUnaryImpl(
         std::function<void(ServerContextType *, RequestType *,
                            grpc::ServerAsyncResponseWriter<ResponseType> *,
-                           void *)> request_method,
+                           void *)>
+            request_method,
         std::function<grpc::Status(const RequestType *, ResponseType *)>
             invoke_method)
         : srv_ctx_(new ServerContextType),
@@ -387,12 +389,14 @@ static Status ProcessGenericRPC(const PayloadConfig &payload_config,
 }
 
 std::unique_ptr<Server> CreateAsyncServer(const ServerConfig &config) {
-  return std::unique_ptr<Server>(new AsyncQpsServerTest<
-      SimpleRequest, SimpleResponse, BenchmarkService::AsyncService,
-      grpc::ServerContext>(
-      config, RegisterBenchmarkService,
-      &BenchmarkService::AsyncService::RequestUnaryCall,
-      &BenchmarkService::AsyncService::RequestStreamingCall, ProcessSimpleRPC));
+  return std::unique_ptr<Server>(
+      new AsyncQpsServerTest<SimpleRequest, SimpleResponse,
+                             BenchmarkService::AsyncService,
+                             grpc::ServerContext>(
+          config, RegisterBenchmarkService,
+          &BenchmarkService::AsyncService::RequestUnaryCall,
+          &BenchmarkService::AsyncService::RequestStreamingCall,
+          ProcessSimpleRPC));
 }
 std::unique_ptr<Server> CreateAsyncGenericServer(const ServerConfig &config) {
   return std::unique_ptr<Server>(
