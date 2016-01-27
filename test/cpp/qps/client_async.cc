@@ -176,7 +176,7 @@ class AsyncClient : public ClientImpl<StubType, RequestType> {
         pref_channel_inc_(num_async_threads_) {
     SetupLoadTest(config, num_async_threads_);
 
-    for (int i = 0; i < config.async_client_threads(); i++) {
+    for (int i = 0; i < num_async_threads_; i++) {
       cli_cqs_.emplace_back(new CompletionQueue);
       if (!closed_loop_) {
         rpc_deadlines_.emplace_back();
