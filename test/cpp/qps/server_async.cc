@@ -85,7 +85,12 @@ class AsyncQpsServerTest : public Server {
 
     register_service(&builder, &async_service_);
 
-    for (int i = 0; i < config.async_server_threads(); i++) {
+    int num_threads = config.async_server_threads();
+    if (num_threads <= 0) { // dynamic sizing
+      num_threads = cores();
+    }
+
+    for (int i = 0; i < num_threads; i++) {
       srv_cqs_.emplace_back(builder.AddCompletionQueue());
     }
 
@@ -96,8 +101,8 @@ class AsyncQpsServerTest : public Server {
     auto process_rpc_bound =
         std::bind(process_rpc, config.payload_config(), _1, _2);
 
-    for (int i = 0; i < 10000 / config.async_server_threads(); i++) {
-      for (int j = 0; j < config.async_server_threads(); j++) {
+    for (int i = 0; i < 10000 / num_threads; i++) {
+      for (int j = 0; j < num_threads; j++) {
         if (request_unary_function) {
           auto request_unary =
               std::bind(request_unary_function, &async_service_, _1, _2, _3,
@@ -115,10 +120,10 @@ class AsyncQpsServerTest : public Server {
       }
     }
 
-    for (int i = 0; i < config.async_server_threads(); i++) {
+    for (int i = 0; i < num_threads; i++) {
       shutdown_state_.emplace_back(new PerThreadShutdownState());
     }
-    for (int i = 0; i < config.async_server_threads(); i++) {
+    for (int i = 0; i < num_threads; i++) {
       threads_.emplace_back(&AsyncQpsServerTest::ThreadFunc, this, i);
     }
   }

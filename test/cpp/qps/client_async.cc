@@ -46,6 +46,7 @@
 #include <grpc++/client_context.h>
 #include <grpc++/generic/generic_stub.h>
 #include <grpc/grpc.h>
+#include <grpc/support/cpu.h>
 #include <grpc/support/histogram.h>
 #include <grpc/support/log.h>
 
@@ -358,12 +359,20 @@ static std::unique_ptr<BenchmarkService::Stub> BenchmarkStubCreator(
   return BenchmarkService::NewStub(ch);
 }
 
+static int NumThreads(const ClientConfig& config) {
+  int num_threads = config.async_client_threads();
+  if (num_threads <= 0) { // Use dynamic sizing
+    num_threads = gpr_cpu_num_cores();
+  }
+  return num_threads;
+}
+  
 class AsyncUnaryClient GRPC_FINAL
     : public AsyncClient<BenchmarkService::Stub, SimpleRequest> {
  public:
   explicit AsyncUnaryClient(const ClientConfig& config)
       : AsyncClient(config, SetupCtx, BenchmarkStubCreator) {
-    StartThreads(config.async_client_threads());
+    StartThreads(NumThreads(config));
   }
   ~AsyncUnaryClient() GRPC_OVERRIDE { EndThreads(); }
 
@@ -461,7 +470,7 @@ class AsyncStreamingClient GRPC_FINAL
     // async streaming currently only supports closed loop
     GPR_ASSERT(closed_loop_);
 
-    StartThreads(config.async_client_threads());
+    StartThreads(NumThreads(config));
   }
 
   ~AsyncStreamingClient() GRPC_OVERRIDE { EndThreads(); }
@@ -566,7 +575,7 @@ class GenericAsyncStreamingClient GRPC_FINAL
     // async streaming currently only supports closed loop
     GPR_ASSERT(closed_loop_);
 
-    StartThreads(config.async_client_threads());
+    StartThreads(NumThreads(config));
   }
 
   ~GenericAsyncStreamingClient() GRPC_OVERRIDE { EndThreads(); }
