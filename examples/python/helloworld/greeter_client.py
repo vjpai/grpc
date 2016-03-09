@@ -32,16 +32,32 @@
 from grpc.beta import implementations
 
 import helloworld_pb2
+import time
+import multiprocessing
 
 _TIMEOUT_SECONDS = 10
+_RPCS = 1000
+_MAXTHREADS = 1000
 
-
-def run():
+def run(count):
   channel = implementations.insecure_channel('localhost', 50051)
   stub = helloworld_pb2.beta_create_Greeter_stub(channel)
-  response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'), _TIMEOUT_SECONDS)
-  print "Greeter client received: " + response.message
+  for i in range(count):
+    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'), _TIMEOUT_SECONDS)
+  # print "Greeter client received: " + response.message
 
 
 if __name__ == '__main__':
-  run()
+  threads = 1
+  while threads < _MAXTHREADS:
+    pid = []
+    for i in range(threads):
+      pid.append(multiprocessing.Process(target=run, args=(_RPCS,)))
+    ts1 = time.time()
+    for p in pid:
+      p.start()
+    for p in pid:
+      p.join()
+    ts2 = time.time()
+    print "QPS with " + str(threads) + " threads: " + str((_RPCS*threads)/(ts2-ts1))
+    threads = threads * 2
