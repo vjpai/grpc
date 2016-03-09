@@ -43,7 +43,7 @@ def run(count):
   channel = implementations.insecure_channel('localhost', 50051)
   stub = helloworld_pb2.beta_create_Greeter_stub(channel)
   for i in range(count):
-    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'), _TIMEOUT_SECONDS)
+    response = stub.SayHello(helloworld_pb2.HelloRequest(name=''), _TIMEOUT_SECONDS)
   # print "Greeter client received: " + response.message
 
 
