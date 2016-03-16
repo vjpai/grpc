@@ -40,11 +40,30 @@ $LOAD_PATH.unshift(lib_dir) unless $LOAD_PATH.include?(lib_dir)
 require 'grpc'
 require 'helloworld_services'
 
-def main
+def thread_func(num_rpcs)
   stub = Helloworld::Greeter::Stub.new('localhost:50051', :this_channel_is_insecure)
-  user = ARGV.size > 0 ?  ARGV[0] : 'world'
-  message = stub.say_hello(Helloworld::HelloRequest.new(name: user)).message
-  p "Greeting: #{message}"
+  (0..num_rpcs-1).each do |i|
+    message = stub.say_hello(Helloworld::HelloRequest.new(name: '')).message
+  end
+end
+
+def main
+  num_rpcs = 1000
+  max_num_threads = 32
+  num_threads = 1
+  t = []
+  while num_threads <= max_num_threads
+    start = Time.new.to_f
+    (0..num_threads-1).each do |i|
+      t[i] = Thread.new{thread_func(num_rpcs)}
+    end
+    (0..num_threads-1).each do |i|
+      t[i].join
+    end
+    p "QPS with " + num_threads.to_s + " threads: " + (num_rpcs*num_threads / (Time.new.to_f-start)).to_s
+    num_threads = num_threads * 2
+  end
+#  p "Greeting: #{message}"
 end
 
 main
