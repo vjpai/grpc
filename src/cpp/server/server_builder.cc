@@ -137,12 +137,14 @@ ServerBuilder& ServerBuilder::AddListeningPort(
 }
 
 std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
-  std::unique_ptr<ThreadPoolInterface> thread_pool;
+  std::unique_ptr<ThreadPoolInterface> owned_thread_pool;
   bool has_sync_methods = false;
   for (auto it = services_.begin(); it != services_.end(); ++it) {
     if ((*it)->service->has_synchronous_methods()) {
-      if (!thread_pool) {
-        thread_pool.reset(CreateDefaultThreadPool());
+      if (!owned_thread_pool) {
+	if (!thread_pool_) {
+	  owned_thread_pool.reset(CreateDefaultThreadPool());
+	}
         has_sync_methods = true;
         break;
       }
@@ -154,8 +156,10 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
     (*option)->UpdatePlugins(&plugins_);
   }
   for (auto plugin = plugins_.begin(); plugin != plugins_.end(); plugin++) {
-    if (!thread_pool && (*plugin)->has_sync_methods()) {
-      thread_pool.reset(CreateDefaultThreadPool());
+    if (!owned_thread_pool && (*plugin)->has_sync_methods()) {
+      if (!thread_pool_) {
+	owned_thread_pool.reset(CreateDefaultThreadPool());
+      }
       has_sync_methods = true;
     }
     (*plugin)->UpdateChannelArguments(&args);
@@ -173,8 +177,16 @@ std::unique_ptr<Server> ServerBuilder::BuildAndStart() {
     args.SetInt(GRPC_COMPRESSION_CHANNEL_DEFAULT_ALGORITHM,
                 maybe_default_compression_algorithm_.algorithm);
   }
-  std::unique_ptr<Server> server(
-      new Server(thread_pool.release(), true, max_message_size_, &args));
+
+  std::unique_ptr<Server> server;
+
+  if (thread_pool_) {
+    server.reset(new Server(thread_pool_, false, max_message_size_, &args));
+  } else {
+    server.reset(new Server(owned_thread_pool.release(), true,
+			    max_message_size_, &args));
+  }
+
   ServerInitializer* initializer = server->initializer();
 
   // If the server has atleast one sync methods, we know that this is a Sync
