@@ -52,6 +52,7 @@ class Server;
 class ServerCompletionQueue;
 class ServerCredentials;
 class Service;
+class ThreadPoolInterface;
 
 namespace testing {
 class ServerBuilderPluginTest;
@@ -143,6 +144,15 @@ class ServerBuilder {
   std::unique_ptr<ServerCompletionQueue> AddCompletionQueue(
       bool is_frequently_polled = true);
 
+  /// Set a thread pool for use by the resulting server, if needed
+  ///
+  /// \param thread_pool An implementation of ThreadPoolInterface to be
+  /// used for sync methods on this server. This is not assumed to be owned
+  /// by the server and will not be deleted when the server finishes
+  void SetThreadPool(ThreadPoolInterface *thread_pool) {
+    thread_pool_ = thread_pool;
+  }
+
   /// Return a running server which is ready for processing calls.
   std::unique_ptr<Server> BuildAndStart();
 
@@ -185,6 +195,8 @@ class ServerBuilder {
     grpc_compression_algorithm algorithm;
   } maybe_default_compression_algorithm_;
   uint32_t enabled_compression_algorithms_bitset_;
+
+  ThreadPoolInterface *thread_pool_;
 };
 
 }  // namespace grpc

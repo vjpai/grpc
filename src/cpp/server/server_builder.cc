@@ -52,7 +52,7 @@ static void do_plugin_list_init(void) {
 }
 
 ServerBuilder::ServerBuilder()
-    : max_message_size_(-1), generic_service_(nullptr) {
+    : max_message_size_(-1), generic_service_(nullptr), thread_pool_(nullptr) {
   gpr_once_init(&once_init_plugin_list, do_plugin_list_init);
   for (auto it = g_plugin_factory_list->begin();
        it != g_plugin_factory_list->end(); it++) {
