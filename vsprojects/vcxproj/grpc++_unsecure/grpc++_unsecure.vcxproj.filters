@@ -303,6 +303,9 @@
     <ClInclude Include="$(SolutionDir)\..\include\grpc++\impl\codegen\status_helper.h">
       <Filter>include\grpc++\impl\codegen</Filter>
     </ClInclude>
+    <ClInclude Include="$(SolutionDir)\..\include\grpc++\impl\codegen\stream_op_status.h">
+      <Filter>include\grpc++\impl\codegen</Filter>
+    </ClInclude>
     <ClInclude Include="$(SolutionDir)\..\include\grpc++\impl\codegen\string_ref.h">
       <Filter>include\grpc++\impl\codegen</Filter>
     </ClInclude>

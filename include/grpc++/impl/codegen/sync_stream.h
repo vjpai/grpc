@@ -42,10 +42,9 @@
 #include <grpc++/impl/codegen/server_context.h>
 #include <grpc++/impl/codegen/service_type.h>
 #include <grpc++/impl/codegen/status.h>
+#include <grpc++/impl/codegen/stream_op_status.h>
 
 namespace grpc {
-
-enum StreamOpStatus { FAIL, SUCCESS, TIMEOUT };
 
 /// Common interface for all synchronous client side streaming.
 class ClientStreamingInterface {
