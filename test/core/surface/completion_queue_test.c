@@ -333,6 +333,7 @@ static void consumer_thread(void *arg) {
         gpr_event_set(&opt->on_finished, (void *)(intptr_t)1);
         return;
       case GRPC_QUEUE_TIMEOUT:
+      case GRPC_OP_TIMEOUT:
         gpr_log(GPR_ERROR, "Invalid timeout received");
         abort();
     }

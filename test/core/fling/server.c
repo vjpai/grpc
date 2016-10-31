@@ -317,6 +317,7 @@ int main(int argc, char **argv) {
         shutdown_finished = 1;
         break;
       case GRPC_QUEUE_TIMEOUT:
+      case GRPC_OP_TIMEOUT:
         break;
     }
   }

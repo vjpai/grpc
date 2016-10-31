@@ -1619,6 +1619,8 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
         stream_op->collect_stats =
             &call->final_info.stats.transport_stream_stats;
         break;
+    case GRPC_OP_SET_BATCH_DEADLINE:
+      break;
     }
   }
 

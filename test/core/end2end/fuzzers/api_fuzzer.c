@@ -576,6 +576,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
           case GRPC_QUEUE_SHUTDOWN:
             abort();
             break;
+          case GRPC_OP_TIMEOUT:
+            GPR_ASSERT(false);
+            break;
         }
         break;
       }
@@ -851,6 +854,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             case GRPC_OP_RECV_MESSAGE:
             case GRPC_OP_RECV_STATUS_ON_CLIENT:
             case GRPC_OP_RECV_CLOSE_ON_SERVER:
+            case GRPC_OP_SET_BATCH_DEADLINE:
               break;
           }
         }

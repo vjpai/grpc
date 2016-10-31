@@ -100,6 +100,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             // TODO(ctiller): keep reading that call!
             break;
         }
+      case GRPC_OP_TIMEOUT:
+        GPR_ASSERT(false);
+	break;
     }
   }
 

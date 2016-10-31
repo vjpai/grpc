@@ -299,7 +299,9 @@ typedef enum grpc_completion_type {
   /** No event before timeout */
   GRPC_QUEUE_TIMEOUT,
   /** Operation completion */
-  GRPC_OP_COMPLETE
+  GRPC_OP_COMPLETE,
+  /** Operation timed out and was squashed, but RPC may still be valid */
+  GRPC_OP_TIMEOUT
 } grpc_completion_type;
 
 /** The result of an operation.
@@ -374,7 +376,15 @@ typedef enum {
       This op completes after the close has been received by the server.
       This operation always succeeds, meaning ops paired with this operation
       will also appear to succeed, even though they may not have. */
-  GRPC_OP_RECV_CLOSE_ON_SERVER
+  GRPC_OP_RECV_CLOSE_ON_SERVER,
+  /** Set deadline for the batch
+      This op enables the batch to set a deadline so that operations
+      that have not "committed" by that time are quelled. The definition of
+      "commit" is that some part of the operation has been performed in an
+      irreversible way. Note that this invariably leads to soft deadlines
+      since the actual op may still succeed even if it has not fully completed
+      before the deadline, so long as it is no longer reversible. */
+  GRPC_OP_SET_BATCH_DEADLINE
 } grpc_op_type;
 
 struct grpc_byte_buffer;
@@ -457,6 +467,9 @@ typedef struct grpc_op {
           cancellation on the server), or 0 if the call succeeded */
       int *cancelled;
     } recv_close_on_server;
+    struct {
+      gpr_timespec deadline;
+    } set_batch_deadline;
   } data;
 } grpc_op;
 

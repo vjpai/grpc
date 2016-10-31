@@ -213,8 +213,9 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
       const WaitForInitialMetadataOptions& options) GRPC_OVERRIDE {
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
-    CallOpSet<CallOpRecvInitialMetadata> ops;
+    CallOpSet<CallOpRecvInitialMetadata,CallOpSetBatchDeadline> ops;
     ops.RecvInitialMetadata(context_);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     cq_.Pluck(&ops);  /// status ignored
     return StreamOpStatus::SUCCESS;
@@ -229,11 +230,12 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
 
   using ReaderInterface<R>::Read;
   StreamOpStatus Read(R* msg, const ReadOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
     ops.RecvMessage(msg);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops) && ops.got_message) ? StreamOpStatus::SUCCESS
                                                 : StreamOpStatus::FAIL;
@@ -243,9 +245,10 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
 
   Status Finish(const FinishOptions& options,
                 StreamOpStatus* completed) GRPC_OVERRIDE {
-    CallOpSet<CallOpClientRecvStatus> ops;
+    CallOpSet<CallOpClientRecvStatus, CallOpSetBatchDeadline> ops;
     Status status;
     ops.ClientRecvStatus(context_, &status);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     GPR_CODEGEN_ASSERT(cq_.Pluck(&ops));
     *completed = StreamOpStatus::SUCCESS;
@@ -297,8 +300,9 @@ class ClientWriter : public ClientWriterInterface<W> {
       const WaitForInitialMetadataOptions& options) {
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
-    CallOpSet<CallOpRecvInitialMetadata> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.RecvInitialMetadata(context_);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     cq_.Pluck(&ops);  // status ignored
     return StreamOpStatus::SUCCESS;
@@ -311,18 +315,20 @@ class ClientWriter : public ClientWriterInterface<W> {
   using WriterInterface<W>::Write;
   StreamOpStatus Write(const W& msg,
                        const WriteOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpSendMessage> ops;
+    CallOpSet<CallOpSendMessage, CallOpSetBatchDeadline> ops;
     if (!ops.SendMessage(msg, options).ok()) {
       return StreamOpStatus::FAIL;
     }
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops)) ? StreamOpStatus::SUCCESS : StreamOpStatus::FAIL;
   }
 
   using ClientWriterInterface<W>::WritesDone;
   StreamOpStatus WritesDone(const WritesDoneOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpClientSendClose> ops;
+    CallOpSet<CallOpClientSendClose, CallOpSetBatchDeadline> ops;
     ops.ClientSendClose();
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops)) ? StreamOpStatus::SUCCESS : StreamOpStatus::FAIL;
   }
@@ -337,6 +343,7 @@ class ClientWriter : public ClientWriterInterface<W> {
       finish_ops_.RecvInitialMetadata(context_);
     }
     finish_ops_.ClientRecvStatus(context_, &status);
+    finish_ops_.SetBatchDeadline(options.deadline());
     call_.PerformOps(&finish_ops_);
     GPR_CODEGEN_ASSERT(cq_.Pluck(&finish_ops_));
     *completed = StreamOpStatus::SUCCESS;
@@ -346,7 +353,7 @@ class ClientWriter : public ClientWriterInterface<W> {
  private:
   ClientContext* context_;
   CallOpSet<CallOpRecvInitialMetadata, CallOpGenericRecvMessage,
-            CallOpClientRecvStatus>
+    CallOpClientRecvStatus, CallOpSetBatchDeadline>
       finish_ops_;
   CompletionQueue cq_;
   Call call_;
@@ -399,8 +406,9 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
       const WaitForInitialMetadataOptions& options) GRPC_OVERRIDE {
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
-    CallOpSet<CallOpRecvInitialMetadata> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.RecvInitialMetadata(context_);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     cq_.Pluck(&ops);  // status ignored
     return StreamOpStatus::SUCCESS;
@@ -415,11 +423,12 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
 
   using ReaderInterface<R>::Read;
   StreamOpStatus Read(R* msg, const ReadOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
     ops.RecvMessage(msg);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops) && ops.got_message) ? StreamOpStatus::SUCCESS
                                                 : StreamOpStatus::FAIL;
@@ -428,16 +437,18 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
   using WriterInterface<W>::Write;
   StreamOpStatus Write(const W& msg,
                        const WriteOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpSendMessage> ops;
+    CallOpSet<CallOpSendMessage, CallOpSetBatchDeadline> ops;
     if (!ops.SendMessage(msg, options).ok()) return StreamOpStatus::FAIL;
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops)) ? StreamOpStatus::SUCCESS : StreamOpStatus::FAIL;
   }
 
   using ClientReaderWriterInterface<W, R>::WritesDone;
   StreamOpStatus WritesDone(const WritesDoneOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpClientSendClose> ops;
+    CallOpSet<CallOpClientSendClose, CallOpSetBatchDeadline> ops;
     ops.ClientSendClose();
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     return (cq_.Pluck(&ops)) ? StreamOpStatus::SUCCESS : StreamOpStatus::FAIL;
   }
@@ -446,12 +457,13 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
 
   Status Finish(const FinishOptions& options,
                 StreamOpStatus* completed) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpClientRecvStatus> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpClientRecvStatus, CallOpSetBatchDeadline> ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
     Status status;
     ops.ClientRecvStatus(context_, &status);
+    ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
     GPR_CODEGEN_ASSERT(cq_.Pluck(&ops));
     *completed = StreamOpStatus::SUCCESS;
@@ -478,7 +490,7 @@ class ServerReader GRPC_FINAL : public ServerReaderInterface<R> {
       GRPC_OVERRIDE {
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
-    CallOpSet<CallOpSendInitialMetadata> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.SendInitialMetadata(ctx_->initial_metadata_,
                             ctx_->initial_metadata_flags());
     if (ctx_->compression_level_set()) {
@@ -499,8 +511,9 @@ class ServerReader GRPC_FINAL : public ServerReaderInterface<R> {
 
   using ReaderInterface<R>::Read;
   StreamOpStatus Read(R* msg, const ReadOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvMessage<R>> ops;
+    CallOpSet<CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
     ops.RecvMessage(msg);
+    ops.SetBatchDeadline(options.deadline());
     call_->PerformOps(&ops);
     return (call_->cq()->Pluck(&ops) && ops.got_message)
                ? StreamOpStatus::SUCCESS
@@ -526,7 +539,7 @@ class ServerWriter GRPC_FINAL : public ServerWriterInterface<W> {
       GRPC_OVERRIDE {
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
-    CallOpSet<CallOpSendInitialMetadata> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.SendInitialMetadata(ctx_->initial_metadata_,
                             ctx_->initial_metadata_flags());
     if (ctx_->compression_level_set()) {
@@ -541,7 +554,7 @@ class ServerWriter GRPC_FINAL : public ServerWriterInterface<W> {
   using WriterInterface<W>::Write;
   StreamOpStatus Write(const W& msg,
                        const WriteOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpSetBatchDeadline> ops;
     if (!ops.SendMessage(msg, options).ok()) {
       return StreamOpStatus::FAIL;
     }
@@ -553,6 +566,7 @@ class ServerWriter GRPC_FINAL : public ServerWriterInterface<W> {
       }
       ctx_->sent_initial_metadata_ = true;
     }
+    ops.SetBatchDeadline(options.deadline());
     call_->PerformOps(&ops);
     return (call_->cq()->Pluck(&ops)) ? StreamOpStatus::SUCCESS
                                       : StreamOpStatus::FAIL;
@@ -581,7 +595,7 @@ class ServerReaderWriterBody GRPC_FINAL {
       const SendInitialMetadataOptions& options) {
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
-    CallOpSet<CallOpSendInitialMetadata> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.SendInitialMetadata(ctx_->initial_metadata_,
                             ctx_->initial_metadata_flags());
     if (ctx_->compression_level_set()) {
@@ -600,8 +614,9 @@ class ServerReaderWriterBody GRPC_FINAL {
   }
 
   StreamOpStatus Read(R* msg, const ReadOptions& options) {
-    CallOpSet<CallOpRecvMessage<R>> ops;
+    CallOpSet<CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
     ops.RecvMessage(msg);
+    ops.SetBatchDeadline(options.deadline());
     call_->PerformOps(&ops);
     return (call_->cq()->Pluck(&ops) && ops.got_message)
                ? StreamOpStatus::SUCCESS
@@ -609,7 +624,7 @@ class ServerReaderWriterBody GRPC_FINAL {
   }
 
   StreamOpStatus Write(const W& msg, const WriteOptions& options) {
-    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpSetBatchDeadline> ops;
     if (!ops.SendMessage(msg, options).ok()) {
       return StreamOpStatus::FAIL;
     }
@@ -621,6 +636,7 @@ class ServerReaderWriterBody GRPC_FINAL {
       }
       ctx_->sent_initial_metadata_ = true;
     }
+    ops.SetBatchDeadline(options.deadline());
     call_->PerformOps(&ops);
     return (call_->cq()->Pluck(&ops)) ? StreamOpStatus::SUCCESS
                                       : StreamOpStatus::FAIL;

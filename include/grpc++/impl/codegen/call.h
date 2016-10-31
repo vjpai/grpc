@@ -618,6 +618,31 @@ class CallOpClientRecvStatus {
   size_t status_details_capacity_;
 };
 
+class CallOpSetBatchDeadline {
+ public:
+ CallOpSetBatchDeadline() : deadline_set_(false) {}
+ void SetBatchDeadline(gpr_timespec deadline) {
+   deadline_ = deadline;
+   deadline_set_ = true;
+ }
+ protected:
+ void AddOp(grpc_op* ops, size_t* nops) {
+   if (!deadline_set_) return;
+   grpc_op* op = &ops[(*nops)++];
+   op->op = GRPC_OP_SET_BATCH_DEADLINE;
+   op->flags = 0;
+   op->reserved = NULL;
+   op->data.set_batch_deadline.deadline = deadline_;
+ }
+ void FinishOp(bool* status, int max_receive_message_size) {
+   if (!deadline_set_) return;
+   deadline_set_ = false;
+ }
+ private:
+  bool deadline_set_;
+  gpr_timespec deadline_;
+};
+ 
 /// An abstract collection of CallOpSet's, to be used whenever
 /// CallOpSet objects must be thought of as a group. Each member
 /// of the group should have a shared_ptr back to the collection,
