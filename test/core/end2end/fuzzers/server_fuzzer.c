@@ -102,7 +102,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         }
       case GRPC_OP_TIMEOUT:
         GPR_ASSERT(false);
-	break;
+        break;
     }
   }
 

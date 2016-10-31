@@ -213,7 +213,7 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
       const WaitForInitialMetadataOptions& options) GRPC_OVERRIDE {
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
-    CallOpSet<CallOpRecvInitialMetadata,CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpSetBatchDeadline> ops;
     ops.RecvInitialMetadata(context_);
     ops.SetBatchDeadline(options.deadline());
     call_.PerformOps(&ops);
@@ -230,7 +230,9 @@ class ClientReader GRPC_FINAL : public ClientReaderInterface<R> {
 
   using ReaderInterface<R>::Read;
   StreamOpStatus Read(R* msg, const ReadOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>,
+              CallOpSetBatchDeadline>
+        ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
@@ -353,7 +355,7 @@ class ClientWriter : public ClientWriterInterface<W> {
  private:
   ClientContext* context_;
   CallOpSet<CallOpRecvInitialMetadata, CallOpGenericRecvMessage,
-    CallOpClientRecvStatus, CallOpSetBatchDeadline>
+            CallOpClientRecvStatus, CallOpSetBatchDeadline>
       finish_ops_;
   CompletionQueue cq_;
   Call call_;
@@ -423,7 +425,9 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
 
   using ReaderInterface<R>::Read;
   StreamOpStatus Read(R* msg, const ReadOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>, CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>,
+              CallOpSetBatchDeadline>
+        ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
@@ -457,7 +461,9 @@ class ClientReaderWriter GRPC_FINAL : public ClientReaderWriterInterface<W, R> {
 
   Status Finish(const FinishOptions& options,
                 StreamOpStatus* completed) GRPC_OVERRIDE {
-    CallOpSet<CallOpRecvInitialMetadata, CallOpClientRecvStatus, CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpRecvInitialMetadata, CallOpClientRecvStatus,
+              CallOpSetBatchDeadline>
+        ops;
     if (!context_->initial_metadata_received_) {
       ops.RecvInitialMetadata(context_);
     }
@@ -554,7 +560,9 @@ class ServerWriter GRPC_FINAL : public ServerWriterInterface<W> {
   using WriterInterface<W>::Write;
   StreamOpStatus Write(const W& msg,
                        const WriteOptions& options) GRPC_OVERRIDE {
-    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
+              CallOpSetBatchDeadline>
+        ops;
     if (!ops.SendMessage(msg, options).ok()) {
       return StreamOpStatus::FAIL;
     }
@@ -624,7 +632,9 @@ class ServerReaderWriterBody GRPC_FINAL {
   }
 
   StreamOpStatus Write(const W& msg, const WriteOptions& options) {
-    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpSetBatchDeadline> ops;
+    CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
+              CallOpSetBatchDeadline>
+        ops;
     if (!ops.SendMessage(msg, options).ok()) {
       return StreamOpStatus::FAIL;
     }
