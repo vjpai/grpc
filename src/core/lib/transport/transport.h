@@ -159,6 +159,10 @@ typedef struct grpc_transport_stream_op {
   /* Indexes correspond to grpc_context_index enum values */
   grpc_call_context_element *context;
 
+  /* Information about whether or not this stream op has a deadline */
+  bool has_op_deadline;
+  gpr_timespec op_deadline;
+  
   /***************************************************************************
    * remaining fields are initialized and used at the discretion of the
    * transport implementation */
