@@ -99,13 +99,17 @@ module GRPC
                    connect_md_proc:nil,
                    server_args:{})
       @connect_md_proc = RpcServer.setup_connect_md_proc(connect_md_proc)
-      @max_waiting_requests = max_waiting_requests
       @poll_period = poll_period
+      # To avoid deadlock possibility if server is in a cyclic dependence
+      # with another server, count all "waiting requests" as possible threads
+      @max_threads = pool_size + max_waiting_requests
 
       @pool = Concurrent::ThreadPoolExecutor.new(
         min_threads: [min_pool_size, pool_size].min,
-        max_threads: pool_size,
-        max_queue: max_waiting_requests,
+        max_threads: @max_threads,
+        # We won't actually use the queue since we will prevent posting if
+        # all threads are in use
+        max_queue: 0,
         fallback_policy: :discard)
       @run_cond = ConditionVariable.new
       @run_mutex = Mutex.new
@@ -236,11 +240,14 @@ module GRPC
 
     # Sends RESOURCE_EXHAUSTED if there are too many unprocessed jobs
     def available?(an_rpc)
-      jobs_count, max = @pool.queue_length, @pool.max_queue
-      GRPC.logger.info("waiting: #{jobs_count}, max: #{max}")
+      if @pool.queue_length > 0
+        GRPC.logger.warn('Server thread pool has queue: invariant violated')
+      end
 
-      # remaining capacity for ThreadPoolExecutors is -1 if unbounded
-      return an_rpc if @pool.remaining_capacity != 0
+      jobs_count = @pool.current_length
+      GRPC.logger.info("processing: #{jobs_count}, max: #{@max_threads}")
+
+      return an_rpc if @max_threads > jobs_count
       GRPC.logger.warn("NOT AVAILABLE: too many jobs_waiting: #{an_rpc}")
       noop = proc { |x| x }
 
