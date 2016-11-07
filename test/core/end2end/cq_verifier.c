@@ -183,6 +183,7 @@ static void verify_matches(expectation *e, grpc_event *ev) {
       GPR_ASSERT(e->success == ev->success);
       break;
     case GRPC_QUEUE_TIMEOUT:
+    case GRPC_OP_TIMEOUT:
       gpr_log(GPR_ERROR, "not implemented");
       abort();
       break;
@@ -203,6 +204,7 @@ static void expectation_to_strvec(gpr_strvec *buf, expectation *e) {
       break;
     case GRPC_QUEUE_TIMEOUT:
     case GRPC_QUEUE_SHUTDOWN:
+    case GRPC_OP_TIMEOUT:
       gpr_log(GPR_ERROR, "not implemented");
       abort();
       break;

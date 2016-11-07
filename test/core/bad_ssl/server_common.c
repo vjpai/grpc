@@ -104,6 +104,9 @@ void bad_ssl_run(grpc_server *server) {
         break;
       case GRPC_QUEUE_TIMEOUT:
         break;
+      case GRPC_OP_TIMEOUT:
+	GPR_ASSERT(false);
+        break;
     }
   }
 

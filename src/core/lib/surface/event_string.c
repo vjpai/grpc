@@ -73,6 +73,9 @@ char *grpc_event_string(grpc_event *ev) {
       addhdr(&buf, ev);
       adderr(&buf, ev->success);
       break;
+    case GRPC_OP_TIMEOUT:
+      gpr_strvec_add(&buf, gpr_strdup("OP_TIMEOUT"));
+      break;
   }
 
   out = gpr_strvec_flatten(&buf, NULL);

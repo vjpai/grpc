@@ -424,6 +424,7 @@ static void thread_main(void *arg) {
         proxy->cq, gpr_inf_future(GPR_CLOCK_MONOTONIC), NULL);
     switch (ev.type) {
       case GRPC_QUEUE_TIMEOUT:
+      case GRPC_OP_TIMEOUT:
         gpr_log(GPR_ERROR, "Should never reach here");
         abort();
       case GRPC_QUEUE_SHUTDOWN:

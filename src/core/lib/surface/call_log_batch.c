@@ -98,6 +98,11 @@ char *grpc_op_string(const grpc_op *op) {
       gpr_asprintf(&tmp, "RECV_CLOSE_ON_SERVER cancelled=%p",
                    op->data.recv_close_on_server.cancelled);
       gpr_strvec_add(&b, tmp);
+    case GRPC_OP_SET_BATCH_DEADLINE:
+      gpr_asprintf(&tmp, "SET_BATCH_DEADLINE deadline=%" PRId64 ".%09" PRId32,
+		   op->data.set_batch_deadline.deadline.tv_sec,
+		   op->data.set_batch_deadline.deadline.tv_nsec);
+      gpr_strvec_add(&b, tmp);    
   }
   out = gpr_strvec_flatten(&b, NULL);
   gpr_strvec_destroy(&b);

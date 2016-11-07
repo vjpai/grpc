@@ -59,6 +59,10 @@ CompletionQueue::NextStatus CompletionQueue::AsyncNextInternal(
         return TIMEOUT;
       case GRPC_QUEUE_SHUTDOWN:
         return SHUTDOWN;
+      case GRPC_OP_TIMEOUT:
+	// Shouldn't arise since op timeout is for sync API only
+	GPR_ASSERT(false);
+	break;
       case GRPC_OP_COMPLETE:
         auto cq_tag = static_cast<CompletionQueueTag*>(ev.tag);
         *ok = ev.success != 0;
