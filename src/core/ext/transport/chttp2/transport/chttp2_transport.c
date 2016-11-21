@@ -133,6 +133,9 @@ static void close_transport_locked(grpc_exec_ctx *exec_ctx,
                                    grpc_chttp2_transport *t, grpc_error *error);
 static void end_all_the_calls(grpc_exec_ctx *exec_ctx, grpc_chttp2_transport *t,
                               grpc_error *error);
+static bool maybe_complete_recv_message(grpc_exec_ctx *exec_ctx,
+                                        grpc_chttp2_transport *t,
+                                        grpc_chttp2_stream *s);
 
 /*******************************************************************************
  * CONSTRUCTION/DESTRUCTION/REFCOUNTING
@@ -663,6 +666,8 @@ static void write_action_begin_locked(grpc_exec_ctx *exec_ctx, void *gt,
   if (!t->closed && grpc_chttp2_begin_write(exec_ctx, t)) {
     set_write_state(exec_ctx, t, GRPC_CHTTP2_WRITE_STATE_WRITING,
                     "begin writing");
+    // TODO(vpai): this is the committed point for the acting write op
+    //             mark it and use it as such
     grpc_exec_ctx_sched(exec_ctx, &t->write_action, GRPC_ERROR_NONE, NULL);
   } else {
     set_write_state(exec_ctx, t, GRPC_CHTTP2_WRITE_STATE_IDLE,
@@ -1133,6 +1138,7 @@ static void perform_stream_op_locked(grpc_exec_ctx *exec_ctx, void *stream_op,
   }
 
   if (op->recv_message != NULL) {
+    bool complete_recv_msg;
     GPR_ASSERT(s->recv_message_ready == NULL);
     s->recv_message_ready = op->recv_message_ready;
     s->recv_message = op->recv_message;
@@ -1141,7 +1147,8 @@ static void perform_stream_op_locked(grpc_exec_ctx *exec_ctx, void *stream_op,
       incoming_byte_stream_update_flow_control(exec_ctx, t, s,
                                                t->stream_lookahead, 0);
     }
-    grpc_chttp2_maybe_complete_recv_message(exec_ctx, t, s);
+    complete_recv_msg = maybe_complete_recv_message(exec_ctx, t, s);
+    op->is_committed = op->is_committed || complete_recv_msg;
   }
 
   if (op->recv_trailing_metadata != NULL) {
@@ -1310,10 +1317,11 @@ void grpc_chttp2_maybe_complete_recv_initial_metadata(grpc_exec_ctx *exec_ctx,
   }
 }
 
-void grpc_chttp2_maybe_complete_recv_message(grpc_exec_ctx *exec_ctx,
-                                             grpc_chttp2_transport *t,
-                                             grpc_chttp2_stream *s) {
+static bool maybe_complete_recv_message(grpc_exec_ctx *exec_ctx,
+                                        grpc_chttp2_transport *t,
+                                        grpc_chttp2_stream *s) {
   grpc_byte_stream *bs;
+  bool ret = false;
   if (s->recv_message_ready != NULL) {
     while (s->final_metadata_requested && s->seen_error &&
            (bs = grpc_chttp2_incoming_frame_queue_pop(&s->incoming_frames)) !=
@@ -1325,18 +1333,20 @@ void grpc_chttp2_maybe_complete_recv_message(grpc_exec_ctx *exec_ctx,
           grpc_chttp2_incoming_frame_queue_pop(&s->incoming_frames);
       GPR_ASSERT(*s->recv_message != NULL);
       null_then_run_closure(exec_ctx, &s->recv_message_ready, GRPC_ERROR_NONE);
+      ret = true;
     } else if (s->published_metadata[1] != GRPC_METADATA_NOT_PUBLISHED) {
       *s->recv_message = NULL;
       null_then_run_closure(exec_ctx, &s->recv_message_ready, GRPC_ERROR_NONE);
     }
   }
+  return ret;
 }
 
 void grpc_chttp2_maybe_complete_recv_trailing_metadata(grpc_exec_ctx *exec_ctx,
                                                        grpc_chttp2_transport *t,
                                                        grpc_chttp2_stream *s) {
   grpc_byte_stream *bs;
-  grpc_chttp2_maybe_complete_recv_message(exec_ctx, t, s);
+  maybe_complete_recv_message(exec_ctx, t, s);
   if (s->recv_trailing_metadata_finished != NULL && s->read_closed &&
       s->write_closed) {
     if (s->seen_error) {
@@ -1564,7 +1574,7 @@ void grpc_chttp2_mark_stream_closed(grpc_exec_ctx *exec_ctx,
     }
     decrement_active_streams_locked(exec_ctx, t, s);
     grpc_chttp2_maybe_complete_recv_initial_metadata(exec_ctx, t, s);
-    grpc_chttp2_maybe_complete_recv_message(exec_ctx, t, s);
+    maybe_complete_recv_message(exec_ctx, t, s);
     grpc_chttp2_maybe_complete_recv_trailing_metadata(exec_ctx, t, s);
   }
   if (close_writes && !s->write_closed) {
@@ -2108,7 +2118,7 @@ grpc_chttp2_incoming_byte_stream *grpc_chttp2_incoming_byte_stream_create(
     q->tail->next_message = incoming_byte_stream;
   }
   q->tail = incoming_byte_stream;
-  grpc_chttp2_maybe_complete_recv_message(exec_ctx, t, s);
+  maybe_complete_recv_message(exec_ctx, t, s);
   return incoming_byte_stream;
 }
 

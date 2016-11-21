@@ -102,7 +102,6 @@ typedef struct batch_control {
   grpc_closure finish_batch;
   void *notify_tag;
   gpr_refcount steps_to_complete;
-  gpr_timespec batch_deadline;
   grpc_error *error;
 
   uint8_t send_initial_metadata;
@@ -112,7 +111,6 @@ typedef struct batch_control {
   uint8_t recv_message;
   uint8_t recv_final_op;
   uint8_t is_notify_tag_closure;
-  uint8_t has_batch_deadline;
 
   /* TODO(ctiller): now that this is inlined, figure out how much of the above
                     state can be eliminated */
@@ -1637,9 +1635,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_INVALID_FLAGS;
           goto done_with_error;
         }
-	bctl->has_batch_deadline = 1;
 	stream_op->has_op_deadline = 1;
-	bctl->batch_deadline = op->data.set_batch_deadline.deadline;
 	stream_op->op_deadline = op->data.set_batch_deadline.deadline;
         break;
     }

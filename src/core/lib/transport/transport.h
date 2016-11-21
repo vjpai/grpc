@@ -163,7 +163,8 @@ typedef struct grpc_transport_stream_op {
   /* Information about whether or not this stream op has a deadline */
   bool has_op_deadline;
   gpr_timespec op_deadline;
-  
+  bool is_committed;
+
   /***************************************************************************
    * remaining fields are initialized and used at the discretion of the
    * transport implementation */
