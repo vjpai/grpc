@@ -134,7 +134,7 @@ struct grpc_call {
   bool cancellation_is_inherited;
   /** bitmask of live batches */
   uint8_t used_batches;
-  /** which ops are in-flight */
+  /** whichs ops are in-flight */
   bool sent_initial_metadata;
   bool sending_message;
   bool sent_final_op;
@@ -1637,6 +1637,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
         }
 	stream_op->has_op_deadline = 1;
 	stream_op->op_deadline = op->data.set_batch_deadline.deadline;
+	
         break;
     }
   }
@@ -1711,6 +1712,35 @@ grpc_call_error grpc_call_start_batch_and_execute(grpc_exec_ctx *exec_ctx,
                                                   size_t nops,
                                                   grpc_closure *closure) {
   return call_start_batch(exec_ctx, call, ops, nops, closure, 1);
+}
+
+static void op_post_quell(grpc_exec_ctx* exec_ctx, batch_control* op,
+			  bool due_to_completion, grpc_error* error) {
+  grpc_call* call = op->call;
+  bool delete = false;
+  if (due_to_completion) {
+    // mark non-quellable if still a possibility. If there was an alarm,
+    // cancel it
+    grpc_timer_cancel(exec_ctx, &op->op.op_deadline_alarm);
+  } else {
+    // attempt to quell if not yet committed
+  }
+
+
+  if (delete) {
+    // It is now safe to really let go of the op
+  }
+
+  GRPC_ERROR_UNREF(error);
+}
+
+static void op_actually_complete(grpc_exec_ctx* exec_ctx, void* op,
+				 grpc_error* error) {
+  op_post_quell(exec_ctx, op, true, GRPC_ERROR_REF(error));
+}
+
+static void op_timeout(grpc_exec_ctx* exec_ctx, void* op, grpc_error* error) {
+  op_post_quell(exec_ctx, op, false, GRPC_ERROR_REF(error));
 }
 
 void grpc_call_context_set(grpc_call *call, grpc_context_index elem,

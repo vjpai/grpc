@@ -41,6 +41,7 @@
 #include "src/core/lib/iomgr/polling_entity.h"
 #include "src/core/lib/iomgr/pollset.h"
 #include "src/core/lib/iomgr/pollset_set.h"
+#include "src/core/lib/iomgr/timer.h"
 #include "src/core/lib/transport/byte_stream.h"
 #include "src/core/lib/transport/metadata_batch.h"
 
@@ -163,6 +164,7 @@ typedef struct grpc_transport_stream_op {
   /* Information about whether or not this stream op has a deadline */
   bool has_op_deadline;
   gpr_timespec op_deadline;
+  grpc_timer op_deadline_alarm;
   bool is_committed;
 
   /***************************************************************************

@@ -1157,7 +1157,7 @@ static void perform_stream_op_locked(grpc_exec_ctx *exec_ctx, void *stream_op,
     s->recv_trailing_metadata = op->recv_trailing_metadata;
     s->final_metadata_requested = true;
     grpc_chttp2_maybe_complete_recv_trailing_metadata(exec_ctx, t, s);
-  }
+  } 
 
   grpc_chttp2_complete_closure_step(exec_ctx, t, s, &on_complete,
                                     GRPC_ERROR_NONE, "op->on_complete");
@@ -2305,6 +2305,19 @@ static char *chttp2_get_peer(grpc_exec_ctx *exec_ctx, grpc_transport *t) {
 }
 
 /*******************************************************************************
+ * QUELLABILITY
+ */
+
+bool quellable(grpc_transport* t, grpc_op_type op) {
+  switch (op) {
+  case GRPC_OP_RECV_MESSAGE:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/*******************************************************************************
  * MONITORING
  */
 static grpc_endpoint *chttp2_get_endpoint(grpc_exec_ctx *exec_ctx,
@@ -2317,6 +2330,7 @@ static const grpc_transport_vtable vtable = {sizeof(grpc_chttp2_stream),
                                              init_stream,
                                              set_pollset,
                                              set_pollset_set,
+					     quellable,
                                              perform_stream_op,
                                              perform_transport_op,
                                              destroy_stream,
