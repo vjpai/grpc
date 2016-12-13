@@ -2305,19 +2305,6 @@ static char *chttp2_get_peer(grpc_exec_ctx *exec_ctx, grpc_transport *t) {
 }
 
 /*******************************************************************************
- * QUELLABILITY
- */
-
-bool quellable(grpc_transport* t, grpc_op_type op) {
-  switch (op) {
-  case GRPC_OP_RECV_MESSAGE:
-    return true;
-  default:
-    return false;
-  }
-}
-
-/*******************************************************************************
  * MONITORING
  */
 static grpc_endpoint *chttp2_get_endpoint(grpc_exec_ctx *exec_ctx,

@@ -1382,6 +1382,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
       error = GRPC_CALL_ERROR;
       goto done_with_error;
     }
+
     switch (op->op) {
       case GRPC_OP_SEND_INITIAL_METADATA:
         /* Flag validation: currently allow no flags */
@@ -1394,6 +1395,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           goto done_with_error;
         }
         /* process compression level */
+	stream_op->is_committed = true;
         memset(&compression_md, 0, sizeof(compression_md));
         size_t additional_metadata_count = 0;
         grpc_compression_level effective_compression_level;
@@ -1457,6 +1459,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         bctl->send_message = 1;
         call->sending_message = 1;
         grpc_slice_buffer_stream_init(
@@ -1484,6 +1487,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         bctl->send_final_op = 1;
         call->sent_final_op = 1;
         stream_op->send_trailing_metadata =
@@ -1508,6 +1512,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_INVALID_METADATA;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         bctl->send_final_op = 1;
         call->sent_final_op = 1;
         call->send_extra_metadata_count = 1;
@@ -1548,6 +1553,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         call->received_initial_metadata = 1;
         call->buffered_metadata[0] = op->data.recv_initial_metadata;
         grpc_closure_init(&call->receiving_initial_metadata_ready,
@@ -1569,6 +1575,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	/* Note that this op doesn't automatically commit since it is quellable */
         call->receiving_message = 1;
         bctl->recv_message = 1;
         call->receiving_buffer = op->data.recv_message;
@@ -1592,6 +1599,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         call->requested_final_op = 1;
         call->buffered_metadata[1] =
             op->data.recv_status_on_client.trailing_metadata;
@@ -1620,6 +1628,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_TOO_MANY_OPERATIONS;
           goto done_with_error;
         }
+	stream_op->is_committed = true;
         call->requested_final_op = 1;
         call->final_op.server.cancelled =
             op->data.recv_close_on_server.cancelled;
@@ -1635,6 +1644,7 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
           error = GRPC_CALL_ERROR_INVALID_FLAGS;
           goto done_with_error;
         }
+	/* Note that this op doesn't commit since it may be for a quellable */
 	stream_op->has_op_deadline = 1;
 	stream_op->op_deadline = op->data.set_batch_deadline.deadline;
 	
@@ -1646,6 +1656,14 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
   if (!is_notify_tag_closure) {
     grpc_cq_begin_op(call->cq, notify_tag);
   }
+
+  /* Check if this operation is quellable and set up a timer if so */
+  if (!stream_op->is_committed && stream_op->has_op_deadline) {
+    grpc_timer_init(exec_ctx, &stream_op->op_deadline_alarm,
+		    stream_op->op_deadline, , ,
+		    
+  }
+  
   gpr_ref_init(&bctl->steps_to_complete, num_completion_callbacks_needed);
 
   stream_op->context = call->context;
@@ -1717,17 +1735,18 @@ grpc_call_error grpc_call_start_batch_and_execute(grpc_exec_ctx *exec_ctx,
 static void op_post_quell(grpc_exec_ctx* exec_ctx, batch_control* op,
 			  bool due_to_completion, grpc_error* error) {
   grpc_call* call = op->call;
-  bool delete = false;
+  bool over = false;
   if (due_to_completion) {
     // mark non-quellable if still a possibility. If there was an alarm,
     // cancel it
     grpc_timer_cancel(exec_ctx, &op->op.op_deadline_alarm);
+    over = true;
   } else {
     // attempt to quell if not yet committed
+    over = true;
   }
 
-
-  if (delete) {
+  if (over) {
     // It is now safe to really let go of the op
   }
 
