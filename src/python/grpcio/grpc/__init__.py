@@ -31,6 +31,7 @@
 
 import abc
 import enum
+import sys
 
 import six
 
@@ -849,6 +850,26 @@ class GenericRpcHandler(six.with_metaclass(abc.ABCMeta)):
     raise NotImplementedError()
 
 
+class ServiceRpcHandler(six.with_metaclass(abc.ABCMeta, GenericRpcHandler)):
+  """An implementation of RPC methods belonging to a service.
+
+  A service handles RPC methods with structured names of the form
+  '/Service.Name/Service.MethodX', where 'Service.Name' is the value
+  returned by service_name(), and 'Service.MethodX' is the service method
+  name.  A service can have multiple service methods names, but only a single
+  service name.
+  """
+
+  @abc.abstractmethod
+  def service_name(self):
+    """Returns this services name.
+
+    Returns:
+      The service name.
+    """
+    raise NotImplementedError()
+
+
 #############################  Server Interface  ###############################
 
 
@@ -927,10 +948,16 @@ class Server(six.with_metaclass(abc.ABCMeta)):
     passed in a previous call will not have the effect of stopping the server
     later.
 
+    This method does not block for any significant length of time. If None is
+    passed as the grace value, existing RPCs are immediately aborted and this
+    method blocks until this Server is completely stopped.
+
     Args:
-      grace: A duration of time in seconds to allow existing RPCs to complete
-        before being aborted by this Server's stopping. If None, this method
-        will block until the server is completely stopped.
+      grace: A duration of time in seconds or None. If a duration of time in
+        seconds, the time to allow existing RPCs to complete before being
+        aborted by this Server's stopping. If None, all RPCs will be aborted
+        immediately and this method will block until this Server is completely
+        stopped.
 
     Returns:
       A threading.Event that will be set when this Server has completely
@@ -1274,6 +1301,7 @@ __all__ = (
     'RpcMethodHandler',
     'HandlerCallDetails',
     'GenericRpcHandler',
+    'ServiceRpcHandler',
     'Server',
     'unary_unary_rpc_method_handler',
     'unary_stream_rpc_method_handler',
@@ -1291,3 +1319,24 @@ __all__ = (
     'secure_channel',
     'server',
 )
+
+
+############################### Extension Shims ################################
+
+
+# Here to maintain backwards compatibility; avoid using these in new code!
+try:
+  import grpc_tools
+  sys.modules.update({'grpc.tools': grpc_tools})
+except ImportError:
+  pass
+try:
+  import grpc_health
+  sys.modules.update({'grpc.health': grpc_health})
+except ImportError:
+  pass
+try:
+  import grpc_reflection
+  sys.modules.update({'grpc.reflection': grpc_reflection})
+except ImportError:
+  pass
