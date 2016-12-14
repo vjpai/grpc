@@ -67,7 +67,7 @@ void grpc_timer_init(grpc_exec_ctx *exec_ctx, grpc_timer *timer,
    the timer, the user is responsible for determining when it is safe to
    destroy that state. */
 
-/* Cancel an *timer.
+/* Cancel *timer.
    There are three cases:
    1. We normally cancel the timer
    2. The timer has already run

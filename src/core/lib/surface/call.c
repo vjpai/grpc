@@ -1044,10 +1044,31 @@ static void finish_batch_completion(grpc_exec_ctx *exec_ctx, void *user_data,
   GRPC_CALL_INTERNAL_UNREF(exec_ctx, call, "completion");
 }
 
+static void op_post_quell(grpc_exec_ctx* exec_ctx, batch_control* op,
+			  bool due_to_completion, grpc_error* error) {
+  bool over = false;
+  if (due_to_completion && op->op.has_op_deadline) {
+    // mark non-quellable if still a possibility. If there was an alarm,
+    // cancel it
+    grpc_timer_cancel(exec_ctx, &op->op.op_deadline_alarm);
+    over = true;
+  } else {
+    // attempt to quell if not yet committed
+    over = true;
+  }
+
+  if (over) {
+    // It is now safe to really let go of the op
+  }
+
+  GRPC_ERROR_UNREF(error);
+}
+
 static void post_batch_completion(grpc_exec_ctx *exec_ctx,
                                   batch_control *bctl) {
   grpc_call *call = bctl->call;
   grpc_error *error = bctl->error;
+  op_post_quell(exec_ctx, bctl, true, GRPC_ERROR_REF(error));
   if (bctl->recv_final_op) {
     GRPC_ERROR_UNREF(error);
     error = GRPC_ERROR_NONE;
@@ -1332,6 +1353,10 @@ static void finish_batch(grpc_exec_ctx *exec_ctx, void *bctlp,
   }
 
   GRPC_ERROR_UNREF(error);
+}
+
+static void op_timeout(grpc_exec_ctx* exec_ctx, void* op, grpc_error* error) {
+  op_post_quell(exec_ctx, op, false, GRPC_ERROR_REF(error));
 }
 
 static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
@@ -1660,8 +1685,11 @@ static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
   /* Check if this operation is quellable and set up a timer if so */
   if (!stream_op->is_committed && stream_op->has_op_deadline) {
     grpc_timer_init(exec_ctx, &stream_op->op_deadline_alarm,
-		    stream_op->op_deadline, , ,
-		    
+		    gpr_convert_clock_type(stream_op->op_deadline,
+					   GPR_CLOCK_MONOTONIC),
+		    op_timeout, bctl, gpr_now(GPR_CLOCK_MONOTONIC));
+  } else {
+    stream_op->has_op_deadline = false;
   }
   
   gpr_ref_init(&bctl->steps_to_complete, num_completion_callbacks_needed);
@@ -1730,36 +1758,6 @@ grpc_call_error grpc_call_start_batch_and_execute(grpc_exec_ctx *exec_ctx,
                                                   size_t nops,
                                                   grpc_closure *closure) {
   return call_start_batch(exec_ctx, call, ops, nops, closure, 1);
-}
-
-static void op_post_quell(grpc_exec_ctx* exec_ctx, batch_control* op,
-			  bool due_to_completion, grpc_error* error) {
-  grpc_call* call = op->call;
-  bool over = false;
-  if (due_to_completion) {
-    // mark non-quellable if still a possibility. If there was an alarm,
-    // cancel it
-    grpc_timer_cancel(exec_ctx, &op->op.op_deadline_alarm);
-    over = true;
-  } else {
-    // attempt to quell if not yet committed
-    over = true;
-  }
-
-  if (over) {
-    // It is now safe to really let go of the op
-  }
-
-  GRPC_ERROR_UNREF(error);
-}
-
-static void op_actually_complete(grpc_exec_ctx* exec_ctx, void* op,
-				 grpc_error* error) {
-  op_post_quell(exec_ctx, op, true, GRPC_ERROR_REF(error));
-}
-
-static void op_timeout(grpc_exec_ctx* exec_ctx, void* op, grpc_error* error) {
-  op_post_quell(exec_ctx, op, false, GRPC_ERROR_REF(error));
 }
 
 void grpc_call_context_set(grpc_call *call, grpc_context_index elem,
