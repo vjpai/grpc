@@ -1047,16 +1047,18 @@ static void finish_batch_completion(grpc_exec_ctx *exec_ctx, void *user_data,
   GRPC_CALL_INTERNAL_UNREF(exec_ctx, call, "completion");
 }
 
-static void op_post_quell(grpc_exec_ctx* exec_ctx, batch_control* op,
+static void batch_post_quell(grpc_exec_ctx* exec_ctx, batch_control* bctl,
 			  bool due_to_completion, grpc_error* error) {
   bool over = false;
-  if (due_to_completion && op->op.has_op_deadline) {
+  if (due_to_completion && bctl->op.has_op_deadline) {
     // mark non-quellable if still a possibility. If there was an alarm,
     // cancel it
-    grpc_timer_cancel(exec_ctx, &op->op.op_deadline_alarm);
+    grpc_timer_cancel(exec_ctx, &bctl->op.op_deadline_alarm);
     over = true;
   } else {
     // attempt to quell if not yet committed
+    // The only thing that can be quelled is a rcv_msg op, so silence that
+    
     over = true;
   }
 
@@ -1071,7 +1073,7 @@ static void post_batch_completion(grpc_exec_ctx *exec_ctx,
                                   batch_control *bctl) {
   grpc_call *call = bctl->call;
   grpc_error *error = bctl->error;
-  op_post_quell(exec_ctx, bctl, true, GRPC_ERROR_REF(error));
+  batch_post_quell(exec_ctx, bctl, true, GRPC_ERROR_REF(error));
   if (bctl->recv_final_op) {
     GRPC_ERROR_UNREF(error);
     error = GRPC_ERROR_NONE;
@@ -1359,7 +1361,7 @@ static void finish_batch(grpc_exec_ctx *exec_ctx, void *bctlp,
 }
 
 static void op_timeout(grpc_exec_ctx* exec_ctx, void* op, grpc_error* error) {
-  op_post_quell(exec_ctx, op, false, GRPC_ERROR_REF(error));
+  batch_post_quell(exec_ctx, (batch_control *)op, false, GRPC_ERROR_REF(error));
 }
 
 static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
