@@ -1055,16 +1055,18 @@ static void batch_post_quell(grpc_exec_ctx* exec_ctx, batch_control* bctl,
       // mark non-quellable if still a possibility. If there was an alarm,
       // cancel it
       grpc_timer_cancel(exec_ctx, &stream_op->op_deadline_alarm);
+      stream_op->has_op_deadline = false;
     }
   } else {
-    // attempt to quell if not yet committed
-    // The only thing that can be quelled is a rcv_msg op, so silence that
-    bctl->recv_message = 0;
-    bctl->call->receiving_stream = NULL;
-    *bctl->call->receiving_buffer = NULL;
-    bctl->call->receiving_message = 0;
-    stream_op->recv_message = NULL;
-    if (gpr_unref(&bctl->steps_to_complete)) {
+    if (stream_op->has_op_deadline) {
+      // attempt to quell if not yet committed
+      // The only thing that can be quelled is a rcv_msg op, so silence that
+      bctl->recv_message = 0;
+      bctl->call->receiving_stream = NULL;
+      *bctl->call->receiving_buffer = NULL;
+      bctl->call->receiving_message = 0;
+      stream_op->recv_message = NULL;
+      stream_op->has_op_deadline = false;
     }
   }
 
@@ -1132,7 +1134,14 @@ static void receiving_slice_ready(grpc_exec_ctx *exec_ctx, void *bctlp,
                                   grpc_error *error) {
   batch_control *bctl = bctlp;
   grpc_call *call = bctl->call;
+  grpc_transport_stream_op *stream_op = &bctl->op;
 
+  if (stream_op->has_op_deadline) {
+    // mark non-quellable if still a possibility. If there was an alarm,
+    // cancel it
+    grpc_timer_cancel(exec_ctx, &stream_op->op_deadline_alarm);
+    stream_op->has_op_deadline = false;
+  }
   if (error == GRPC_ERROR_NONE) {
     grpc_slice_buffer_add(&(*call->receiving_buffer)->data.raw.slice_buffer,
                           call->receiving_slice);
