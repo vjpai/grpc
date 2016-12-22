@@ -1049,31 +1049,32 @@ static void finish_batch_completion(grpc_exec_ctx *exec_ctx, void *user_data,
 
 static void batch_post_quell(grpc_exec_ctx* exec_ctx, batch_control* bctl,
 			  bool due_to_completion, grpc_error* error) {
-  bool over = false;
-  if (due_to_completion && bctl->op.has_op_deadline) {
-    // mark non-quellable if still a possibility. If there was an alarm,
-    // cancel it
-    grpc_timer_cancel(exec_ctx, &bctl->op.op_deadline_alarm);
-    over = true;
+  grpc_transport_stream_op *stream_op = &bctl->op;
+  if (due_to_completion) {
+    if (stream_op->has_op_deadline) {
+      // mark non-quellable if still a possibility. If there was an alarm,
+      // cancel it
+      grpc_timer_cancel(exec_ctx, &stream_op->op_deadline_alarm);
+    }
   } else {
     // attempt to quell if not yet committed
     // The only thing that can be quelled is a rcv_msg op, so silence that
-    
-    over = true;
-  }
-
-  if (over) {
-    // It is now safe to really let go of the op
+    bctl->recv_message = 0;
+    bctl->call->receiving_stream = NULL;
+    *bctl->call->receiving_buffer = NULL;
+    bctl->call->receiving_message = 0;
+    stream_op->recv_message = NULL;
+    if (gpr_unref(&bctl->steps_to_complete)) {
+    }
   }
 
   GRPC_ERROR_UNREF(error);
 }
 
-static void post_batch_completion(grpc_exec_ctx *exec_ctx,
-                                  batch_control *bctl) {
+static void post_batch_completion_real(grpc_exec_ctx *exec_ctx,
+				       batch_control *bctl) {
   grpc_call *call = bctl->call;
   grpc_error *error = bctl->error;
-  batch_post_quell(exec_ctx, bctl, true, GRPC_ERROR_REF(error));
   if (bctl->recv_final_op) {
     GRPC_ERROR_UNREF(error);
     error = GRPC_ERROR_NONE;
@@ -1092,6 +1093,13 @@ static void post_batch_completion(grpc_exec_ctx *exec_ctx,
     grpc_cq_end_op(exec_ctx, bctl->call->cq, bctl->notify_tag, error,
                    finish_batch_completion, bctl, &bctl->cq_completion);
   }
+}
+
+static void post_batch_completion(grpc_exec_ctx *exec_ctx,
+                                  batch_control *bctl) {
+  grpc_error *error = bctl->error;
+  batch_post_quell(exec_ctx, bctl, true, GRPC_ERROR_REF(error));
+  post_batch_completion_real(exec_ctx, bctl);
 }
 
 static void continue_receiving_slices(grpc_exec_ctx *exec_ctx,
@@ -1137,9 +1145,6 @@ static void receiving_slice_ready(grpc_exec_ctx *exec_ctx, void *bctlp,
     call->receiving_stream = NULL;
     grpc_byte_buffer_destroy(*call->receiving_buffer);
     *call->receiving_buffer = NULL;
-    if (gpr_unref(&bctl->steps_to_complete)) {
-      post_batch_completion(exec_ctx, bctl);
-    }
   }
 }
 
@@ -1361,7 +1366,11 @@ static void finish_batch(grpc_exec_ctx *exec_ctx, void *bctlp,
 }
 
 static void op_timeout(grpc_exec_ctx* exec_ctx, void* op, grpc_error* error) {
-  batch_post_quell(exec_ctx, (batch_control *)op, false, GRPC_ERROR_REF(error));
+  batch_control *bctl = (batch_control *)op;
+  batch_post_quell(exec_ctx, bctl, false, GRPC_ERROR_REF(error));
+  if (gpr_unref(&bctl->steps_to_complete)) {
+    post_batch_completion_real(exec_ctx, bctl);
+  }
 }
 
 static grpc_call_error call_start_batch(grpc_exec_ctx *exec_ctx,
