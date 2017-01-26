@@ -45,6 +45,7 @@
 #include <grpc++/impl/codegen/config.h>
 #include <grpc++/impl/codegen/core_codegen_interface.h>
 #include <grpc++/impl/codegen/serialization_traits.h>
+#include <grpc++/impl/codegen/slice.h>
 #include <grpc++/impl/codegen/status.h>
 #include <grpc++/impl/codegen/status_helper.h>
 #include <grpc++/impl/codegen/string_ref.h>
@@ -63,19 +64,6 @@ class CallHook;
 class CompletionQueue;
 extern CoreCodegenInterface* g_core_codegen_interface;
 
-inline void FillMetadataMap(
-    grpc_metadata_array* arr,
-    std::multimap<grpc::string_ref, grpc::string_ref>* metadata) {
-  for (size_t i = 0; i < arr->count; i++) {
-    // TODO(yangg) handle duplicates?
-    metadata->insert(std::pair<grpc::string_ref, grpc::string_ref>(
-        arr->metadata[i].key, grpc::string_ref(arr->metadata[i].value,
-                                               arr->metadata[i].value_length)));
-  }
-  g_core_codegen_interface->grpc_metadata_array_destroy(arr);
-  g_core_codegen_interface->grpc_metadata_array_init(arr);
-}
-
 // TODO(yangg) if the map is changed before we send, the pointers will be a
 // mess. Make sure it does not happen.
 inline grpc_metadata* FillMetadataArray(
@@ -88,9 +76,8 @@ inline grpc_metadata* FillMetadataArray(
           metadata.size() * sizeof(grpc_metadata)));
   size_t i = 0;
   for (auto iter = metadata.cbegin(); iter != metadata.cend(); ++iter, ++i) {
-    metadata_array[i].key = iter->first.c_str();
-    metadata_array[i].value = iter->second.c_str();
-    metadata_array[i].value_length = iter->second.size();
+    metadata_array[i].key = SliceReferencingString(iter->first);
+    metadata_array[i].value = SliceReferencingString(iter->second);
   }
   return metadata_array;
 }
@@ -100,18 +87,22 @@ class DeadlineOption {
  public:
   DeadlineOption()
      : deadline_set_(false), msg_deadline_(
-            g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME)) {}
+					   g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME)),
+    reverting_deadline_(false) {}    
   bool has_deadline() const {return deadline_set_;}
   gpr_timespec deadline() const { return msg_deadline_; }
+  bool reverting_deadline() const { return reverting_deadline_; }
   template <class T>
-  void set_deadline(const T& deadline) {
+  void set_deadline(const T& deadline, bool reverting) {
     deadline_set_ = true;
     msg_deadline_ = (TimePoint<T>(deadline).raw_time());
+    reverting_deadline_ = reverting;
   }
 
  private:
   bool deadline_set_;
   gpr_timespec msg_deadline_;
+  bool reverting_deadline_;
 };
 
 /// Finish-specific options
@@ -119,8 +110,8 @@ class FinishOptions {
  public:
   /// Set a deadline
   template <class T>
-  FinishOptions& set_deadline(const T& dl) {
-    deadline_option_.set_deadline(dl);
+  FinishOptions& set_deadline(const T& dl, bool reverting) {
+    deadline_option_.set_deadline(dl, reverting);
     return *this;
   }
 
@@ -130,7 +121,7 @@ class FinishOptions {
  private:
   DeadlineOption deadline_option_;
 };
-
+ 
 typedef FinishOptions ReadOptions;
 typedef FinishOptions WritesDoneOptions;
 typedef FinishOptions WaitForInitialMetadataOptions;
@@ -213,8 +204,8 @@ class WriteOptions {
 
   /// Set a deadline
   template <class T>
-  WriteOptions& set_deadline(const T& dl) {
-    deadline_option_.set_deadline(dl);
+  WriteOptions& set_deadline(const T& dl, bool reverting) {
+    deadline_option_.set_deadline(dl, reverting);
     return *this;
   }
 
@@ -514,8 +505,9 @@ class CallOpServerSendStatus {
         trailing_metadata_count_;
     op->data.send_status_from_server.trailing_metadata = trailing_metadata_;
     op->data.send_status_from_server.status = send_status_code_;
+    status_details_slice_ = SliceReferencingString(send_status_details_);
     op->data.send_status_from_server.status_details =
-        send_status_details_.empty() ? nullptr : send_status_details_.c_str();
+        send_status_details_.empty() ? nullptr : &status_details_slice_;
     op->flags = 0;
     op->reserved = NULL;
   }
@@ -532,36 +524,35 @@ class CallOpServerSendStatus {
   grpc::string send_status_details_;
   size_t trailing_metadata_count_;
   grpc_metadata* trailing_metadata_;
+  grpc_slice status_details_slice_;
 };
 
 class CallOpRecvInitialMetadata {
  public:
-  CallOpRecvInitialMetadata() : recv_initial_metadata_(nullptr) {}
+  CallOpRecvInitialMetadata() : metadata_map_(nullptr) {}
 
   void RecvInitialMetadata(ClientContext* context) {
     context->initial_metadata_received_ = true;
-    recv_initial_metadata_ = &context->recv_initial_metadata_;
+    metadata_map_ = &context->recv_initial_metadata_;
   }
 
  protected:
   void AddOp(grpc_op* ops, size_t* nops) {
-    if (!recv_initial_metadata_) return;
-    memset(&recv_initial_metadata_arr_, 0, sizeof(recv_initial_metadata_arr_));
+    if (metadata_map_ == nullptr) return;
     grpc_op* op = &ops[(*nops)++];
     op->op = GRPC_OP_RECV_INITIAL_METADATA;
-    op->data.recv_initial_metadata = &recv_initial_metadata_arr_;
+    op->data.recv_initial_metadata = metadata_map_->arr();
     op->flags = 0;
     op->reserved = NULL;
   }
   void FinishOp(bool* status, int max_receive_message_size) {
-    if (recv_initial_metadata_ == nullptr) return;
-    FillMetadataMap(&recv_initial_metadata_arr_, recv_initial_metadata_);
-    recv_initial_metadata_ = nullptr;
+    if (metadata_map_ == nullptr) return;
+    metadata_map_->FillMap();
+    metadata_map_ = nullptr;
   }
 
  private:
-  std::multimap<grpc::string_ref, grpc::string_ref>* recv_initial_metadata_;
-  grpc_metadata_array recv_initial_metadata_arr_;
+  MetadataMap* metadata_map_;
 };
 
 class CallOpClientRecvStatus {
@@ -569,46 +560,37 @@ class CallOpClientRecvStatus {
   CallOpClientRecvStatus() : recv_status_(nullptr) {}
 
   void ClientRecvStatus(ClientContext* context, Status* status) {
-    recv_trailing_metadata_ = &context->trailing_metadata_;
+    metadata_map_ = &context->trailing_metadata_;
     recv_status_ = status;
   }
 
  protected:
   void AddOp(grpc_op* ops, size_t* nops) {
     if (recv_status_ == nullptr) return;
-    memset(&recv_trailing_metadata_arr_, 0,
-           sizeof(recv_trailing_metadata_arr_));
-    status_details_ = nullptr;
-    status_details_capacity_ = 0;
     grpc_op* op = &ops[(*nops)++];
     op->op = GRPC_OP_RECV_STATUS_ON_CLIENT;
-    op->data.recv_status_on_client.trailing_metadata =
-        &recv_trailing_metadata_arr_;
+    op->data.recv_status_on_client.trailing_metadata = metadata_map_->arr();
     op->data.recv_status_on_client.status = &status_code_;
     op->data.recv_status_on_client.status_details = &status_details_;
-    op->data.recv_status_on_client.status_details_capacity =
-        &status_details_capacity_;
     op->flags = 0;
     op->reserved = NULL;
   }
 
   void FinishOp(bool* status, int max_receive_message_size) {
     if (recv_status_ == nullptr) return;
-    FillMetadataMap(&recv_trailing_metadata_arr_, recv_trailing_metadata_);
-    *recv_status_ = Status(
-        static_cast<StatusCode>(status_code_),
-        status_details_ ? grpc::string(status_details_) : grpc::string());
-    g_core_codegen_interface->gpr_free(status_details_);
+    metadata_map_->FillMap();
+    *recv_status_ = Status(static_cast<StatusCode>(status_code_),
+                           grpc::string(GRPC_SLICE_START_PTR(status_details_),
+                                        GRPC_SLICE_END_PTR(status_details_)));
+    g_core_codegen_interface->grpc_slice_unref(status_details_);
     recv_status_ = nullptr;
   }
 
  private:
-  std::multimap<grpc::string_ref, grpc::string_ref>* recv_trailing_metadata_;
+  MetadataMap* metadata_map_;
   Status* recv_status_;
-  grpc_metadata_array recv_trailing_metadata_arr_;
   grpc_status_code status_code_;
-  char* status_details_;
-  size_t status_details_capacity_;
+  grpc_slice status_details_;
 };
 
 class CallOpSetBatchDeadline {

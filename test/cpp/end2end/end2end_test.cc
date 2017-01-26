@@ -209,16 +209,26 @@ class TestScenario {
  public:
   TestScenario(bool proxy, const grpc::string& creds_type)
       : use_proxy(proxy), credentials_type(creds_type) {}
-  void Log() const {
-    gpr_log(GPR_INFO, "Scenario: proxy %d, credentials %s", use_proxy,
-            credentials_type.c_str());
-  }
+  void Log() const;
   bool use_proxy;
   // Although the below grpc::string is logically const, we can't declare
   // them const because of a limitation in the way old compilers (e.g., gcc-4.4)
   // manage vector insertion using a copy constructor
   grpc::string credentials_type;
 };
+
+static std::ostream& operator<<(std::ostream& out,
+                                const TestScenario& scenario) {
+  return out << "TestScenario{use_proxy="
+             << (scenario.use_proxy ? "true" : "false") << ", credentials='"
+             << scenario.credentials_type << "'}";
+}
+
+void TestScenario::Log() const {
+  std::ostringstream out;
+  out << *this;
+  gpr_log(GPR_DEBUG, "%s", out.str().c_str());
+}
 
 class End2endTest : public ::testing::TestWithParam<TestScenario> {
  protected:
@@ -242,7 +252,8 @@ class End2endTest : public ::testing::TestWithParam<TestScenario> {
     // Setup server
     ServerBuilder builder;
     ConfigureServerBuilder(&builder);
-    auto server_creds = GetServerCredentials(GetParam().credentials_type);
+    auto server_creds = GetCredentialsProvider()->GetServerCredentials(
+        GetParam().credentials_type);
     if (GetParam().credentials_type != kInsecureCredentialsType) {
       server_creds->SetAuthMetadataProcessor(processor);
     }
@@ -270,8 +281,8 @@ class End2endTest : public ::testing::TestWithParam<TestScenario> {
     }
     EXPECT_TRUE(is_server_started_);
     ChannelArguments args;
-    auto channel_creds =
-        GetChannelCredentials(GetParam().credentials_type, &args);
+    auto channel_creds = GetCredentialsProvider()->GetChannelCredentials(
+        GetParam().credentials_type, &args);
     if (!user_agent_prefix_.empty()) {
       args.SetUserAgentPrefix(user_agent_prefix_);
     }
@@ -635,7 +646,7 @@ TEST_P(End2endServerTryCancelTest, BidiStreamServerCancelAfter) {
   TestBidiStreamServerCancel(CANCEL_AFTER_PROCESSING, 5);
 }
 
-TEST_P(End2endTest, SimpleRpcWithCustomeUserAgentPrefix) {
+TEST_P(End2endTest, SimpleRpcWithCustomUserAgentPrefix) {
   user_agent_prefix_ = "custom_prefix";
   ResetStub();
   EchoRequest request;
@@ -772,11 +783,11 @@ TEST_P(End2endTest, BidiStreamWithOptions) {
   FinishOptions finopts;
 
   auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(10);
-  wopts.set_deadline(deadline);
-  ropts.set_deadline(deadline);
-  nmopts.set_deadline(deadline);
-  wdopts.set_deadline(deadline);
-  finopts.set_deadline(deadline);
+  wopts.set_deadline(deadline, false);
+  ropts.set_deadline(deadline, false);
+  nmopts.set_deadline(deadline, false);
+  wdopts.set_deadline(deadline, false);
+  finopts.set_deadline(deadline, false);
 
   auto stream = stub_->BidiStream(&context);
 
@@ -1340,6 +1351,7 @@ TEST_P(SecureEnd2endTest, BlockingAuthMetadataPluginAndProcessorFailure) {
   EXPECT_FALSE(s.ok());
   EXPECT_EQ(s.error_code(), StatusCode::UNAUTHENTICATED);
 }
+
 TEST_P(SecureEnd2endTest, SetPerCallCredentials) {
   ResetStub();
   EchoRequest request;
@@ -1568,11 +1580,18 @@ std::vector<TestScenario> CreateTestScenarios(bool use_proxy,
   std::vector<TestScenario> scenarios;
   std::vector<grpc::string> credentials_types;
   if (test_secure) {
-    credentials_types = GetSecureCredentialsTypeList();
+    credentials_types =
+        GetCredentialsProvider()->GetSecureCredentialsTypeList();
   }
   if (test_insecure) {
-    credentials_types.push_back(kInsecureCredentialsType);
+    // Only add insecure credentials type when it is registered with the
+    // provider. User may create providers that do not have insecure.
+    if (GetCredentialsProvider()->GetChannelCredentials(
+            kInsecureCredentialsType, nullptr) != nullptr) {
+      credentials_types.push_back(kInsecureCredentialsType);
+    }
   }
+  GPR_ASSERT(!credentials_types.empty());
   for (auto it = credentials_types.begin(); it != credentials_types.end();
        ++it) {
     scenarios.emplace_back(false, *it);
@@ -1589,7 +1608,7 @@ INSTANTIATE_TEST_CASE_P(End2end, End2endTest,
 
 INSTANTIATE_TEST_CASE_P(End2endServerTryCancel, End2endServerTryCancelTest,
                         ::testing::ValuesIn(CreateTestScenarios(false, true,
-                                                                false)));
+                                                                true)));
 
 INSTANTIATE_TEST_CASE_P(ProxyEnd2end, ProxyEnd2endTest,
                         ::testing::ValuesIn(CreateTestScenarios(true, true,

@@ -371,27 +371,43 @@ class NodeLanguage(object):
   def configure(self, config, args):
     self.config = config
     self.args = args
+    # Note: electron ABI only depends on major and minor version, so that's all
+    # we should specify in the compiler argument
     _check_compiler(self.args.compiler, ['default', 'node0.12',
                                          'node4', 'node5', 'node6',
-                                         'node7'])
+                                         'node7', 'electron1.3'])
     if self.args.compiler == 'default':
+      self.runtime = 'node'
       self.node_version = '4'
     else:
-      # Take off the word "node"
-      self.node_version = self.args.compiler[4:]
+      if self.args.compiler.startswith('electron'):
+        self.runtime = 'electron'
+        self.node_version = self.args.compiler[8:]
+      else:
+        self.runtime = 'node'
+        # Take off the word "node"
+        self.node_version = self.args.compiler[4:]
 
   def test_specs(self):
     if self.platform == 'windows':
       return [self.config.job_spec(['tools\\run_tests\\helper_scripts\\run_node.bat'])]
     else:
-      return [self.config.job_spec(['tools/run_tests/helper_scripts/run_node.sh', self.node_version],
+      run_script = 'run_node'
+      if self.runtime == 'electron':
+        run_script += '_electron'
+      return [self.config.job_spec(['tools/run_tests/helper_scripts/{}.sh'.format(run_script),
+                                    self.node_version],
+                                   None,
                                    environ=_FORCE_ENVIRON_FOR_WRAPPERS)]
 
   def pre_build_steps(self):
     if self.platform == 'windows':
       return [['tools\\run_tests\\helper_scripts\\pre_build_node.bat']]
     else:
-      return [['tools/run_tests/helper_scripts/pre_build_node.sh', self.node_version]]
+      build_script = 'pre_build_node'
+      if self.runtime == 'electron':
+        build_script += '_electron'
+      return [['tools/run_tests/helper_scripts/{}.sh'.format(build_script), self.node_version]]
 
   def make_targets(self):
     return []
@@ -403,7 +419,12 @@ class NodeLanguage(object):
     if self.platform == 'windows':
       return [['tools\\run_tests\\helper_scripts\\build_node.bat']]
     else:
-      return [['tools/run_tests/helper_scripts/build_node.sh', self.node_version]]
+      build_script = 'build_node'
+      if self.runtime == 'electron':
+        build_script += '_electron'
+        # building for electron requires a patch version
+        self.node_version += '.0'
+      return [['tools/run_tests/helper_scripts/{}.sh'.format(build_script), self.node_version]]
 
   def post_tests_steps(self):
     return []
@@ -820,8 +841,12 @@ class Sanity(object):
   def test_specs(self):
     import yaml
     with open('tools/run_tests/sanity/sanity_tests.yaml', 'r') as f:
+      environ={'TEST': 'true'}
+      if _is_use_docker_child():
+        environ['CLANG_FORMAT_SKIP_DOCKER'] = 'true'
       return [self.config.job_spec(cmd['script'].split(),
-                                   timeout_seconds=30*60, environ={'TEST': 'true'},
+                                   timeout_seconds=30*60,
+                                   environ=environ,
                                    cpu_cost=cmd.get('cpu_cost', 1))
               for cmd in yaml.load(f)]
 
@@ -1072,6 +1097,7 @@ argp.add_argument('--compiler',
                            'vs2010', 'vs2013', 'vs2015',
                            'python2.7', 'python3.4', 'python3.5', 'python3.6', 'pypy', 'pypy3',
                            'node0.12', 'node4', 'node5', 'node6', 'node7',
+                           'electron1.3',
                            'coreclr'],
                   default='default',
                   help='Selects compiler to use. Allowed values depend on the platform and language.')

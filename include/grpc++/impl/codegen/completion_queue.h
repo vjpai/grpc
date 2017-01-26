@@ -94,8 +94,10 @@ class ServerContext;
 
 extern CoreCodegenInterface* g_core_codegen_interface;
 
-/// A thin wrapper around \a grpc_completion_queue (see / \a
-/// src/core/surface/completion_queue.h).
+/// A thin wrapper around \ref grpc_completion_queue (see \ref
+/// src/core/lib/surface/completion_queue.h).
+/// See \ref doc/cpp/perf_notes.md for notes on best practices for high
+/// performance servers.
 class CompletionQueue : private GrpcLibraryCodegen {
  public:
   /// Default constructor. Implicitly creates a \a grpc_completion_queue
@@ -220,17 +222,38 @@ class CompletionQueue : private GrpcLibraryCodegen {
 
   /// Wraps \a grpc_completion_queue_pluck.
   /// \warning Must not be mixed with calls to \a Next.
-  bool Pluck(CompletionQueueTag* tag) {
-    auto deadline =
-        g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME);
+  bool TimedPluckInternal(CompletionQueueTag* tag, bool *complete,
+			  gpr_timespec deadline) {
     auto ev = g_core_codegen_interface->grpc_completion_queue_pluck(
         cq_, tag, deadline, nullptr);
+    *complete = (ev.type == GRPC_OP_COMPLETE);
+    if (!*complete) {
+      return false;
+    }
     bool ok = ev.success != 0;
     void* ignored = tag;
     GPR_CODEGEN_ASSERT(tag->FinalizeResult(&ignored, &ok));
     GPR_CODEGEN_ASSERT(ignored == tag);
     // Ignore mutations by FinalizeResult: Pluck returns the C API status
     return ev.success != 0;
+    
+  }
+  
+  /// Performs a fully blocking pluck on \a tag.
+  /// \warning Must not be mixed with calls to \a Next.
+  bool Pluck(CompletionQueueTag* tag) {
+    auto deadline =
+        g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME);
+    bool dummy;
+    return TimedPluckInternal(tag, &dummy, deadline);
+  }
+
+  /// Performs a timed blocking pluck on \a tag.
+  /// \warning Must not be mixed with calls to \a Next.
+  template <typename T>
+  bool TimedPluck(CompletionQueueTag* tag, bool* ok, const T& deadline) {
+    TimePoint<T> deadline_tp(deadline);
+    return TimedPluckInternal(tag, ok, deadline_tp.raw_time());
   }
 
   /// Performs a single polling pluck on \a tag.
