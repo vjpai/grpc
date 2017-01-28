@@ -107,12 +107,14 @@ class DeadlineOption {
   bool reverting_deadline_;
 };
 
-/// Finish-specific options
+/// Finish-specific options (also typedef'ed to many others)
 class FinishOptions {
  public:
   /// Set a deadline
   template <class T>
   FinishOptions& set_deadline(const T& dl, bool reverting) {
+    // TODO (vpai): remove this assert if reversion is enabled
+    GPR_CODEGEN_ASSERT(!reverting);
     deadline_option_.set_deadline(dl, reverting);
     return *this;
   }
@@ -124,7 +126,25 @@ class FinishOptions {
   DeadlineOption deadline_option_;
 };
 
-typedef FinishOptions ReadOptions;
+/// Read-specific options
+class ReadOptions {
+ public:
+  /// Set a deadline
+  template <class T>
+  ReadOptions& set_deadline(const T& dl, bool reverting) {
+    // TODO (vpai): remove this assert if reversion is enabled
+    GPR_CODEGEN_ASSERT(!reverting);
+    deadline_option_.set_deadline(dl, reverting);
+    return *this;
+  }
+
+  /// Get the deadline value
+  const DeadlineOption& deadline() const { return deadline_option_; }
+
+ private:
+  DeadlineOption deadline_option_;
+};
+
 typedef FinishOptions WritesDoneOptions;
 typedef FinishOptions WaitForInitialMetadataOptions;
 typedef FinishOptions NextMessageSizeOptions;
@@ -207,6 +227,8 @@ class WriteOptions {
   /// Set a deadline
   template <class T>
   WriteOptions& set_deadline(const T& dl, bool reverting) {
+    // TODO (vpai): remove this assert if reversion is enabled
+    GPR_CODEGEN_ASSERT(!reverting);
     deadline_option_.set_deadline(dl, reverting);
     return *this;
   }
