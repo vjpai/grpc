@@ -36,6 +36,8 @@
 #include "src/core/ext/transport/inproc/inproc_transport.h"
 #include "src/core/ext/transport/inproc/internal.h"
 
+// Borrow liberally from passthru_endpoint.c
+
 static void ref_transport(grpc_inproc_transport *t) {
 
 }
