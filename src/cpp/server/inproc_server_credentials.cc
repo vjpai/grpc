@@ -31,27 +31,30 @@
  *
  */
 
-#ifndef GRPC_CORE_EXT_TRANSPORT_INPROC_INPROC_TRANSPORT_H
-#define GRPC_CORE_EXT_TRANSPORT_INPROC_INPROC_TRANSPORT_H 1
+#include <grpc++/security/server_credentials.h>
 
-#include "src/core/lib/transport/transport.h"
+#include <grpc/grpc.h>
+#include <grpc/support/log.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "src/core/ext/transport/inproc_transport.h"
 
-grpc_transport *grpc_create_inproc_transport(
-    grpc_exec_ctx *exec_ctx, const grpc_channel_args *channel_args,
-    grpc_endpoint *ep, int is_client);
+namespace grpc {
+namespace {
+class InProcServerCredentialsImpl final : public ServerCredentials {
+ public:
+  int AddPortToServer(const grpc::string& addr, grpc_server* server) override {
+    return grpc_server_add_inproc_port(server, addr.c_str());
+  }
+  void SetAuthMetadataProcessor(
+      const std::shared_ptr<AuthMetadataProcessor>& processor) override {
+    (void)processor;
+    GPR_ASSERT(0);  // Should not be called on InProcServerCredentials.
+  }
+};
+}  // namespace
 
-grpc_error *grpc_server_add_inproc_port(grpc_server *server, const char *addr);
-
-grpc_channel *grpc_inproc_channel_create(const char *target,
-					 grpc_channel_args *channel_args,
-					 void *reserved);
-  
-#ifdef __cplusplus
+std::shared_ptr<ServerCredentials> InProcServerCredentials() {
+  return std::make_shared<InProcServerCredentialsImpl>();
 }
-#endif
 
-#endif /* GRPC_CORE_EXT_TRANSPORT_INPROC_INPROC_TRANSPORT_H */
+}  // namespace grpc

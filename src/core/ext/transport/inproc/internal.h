@@ -38,19 +38,8 @@
 extern "C" {
 #endif
 
-typedef struct grpc_inproc_transport {
-  grpc_transport base; /* must be first */
-  gpr_refcount refs;
-  char *peer_string;
 
-  grpc_fd notification_fd; /* Used only for polling */
-} grpc_inproc_transport;
-
-typedef struct grpc_inproc_stream {
-  grpc_inproc_transport *t;
-  grpc_stream_refcount *refcount;
-};
-
+  
 #ifdef __cplusplus
 }
 #endif

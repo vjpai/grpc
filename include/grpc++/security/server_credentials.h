@@ -100,6 +100,9 @@ std::shared_ptr<ServerCredentials> SslServerCredentials(
 /// Builds insecure server credentials.
 std::shared_ptr<ServerCredentials> InsecureServerCredentials();
 
+/// Builds in-process server credentials.
+std::shared_ptr<ServerCredentials> InProcServerCredentials();
+
 }  // namespace grpc
 
 #endif  // GRPCXX_SECURITY_SERVER_CREDENTIALS_H
