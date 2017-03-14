@@ -44,6 +44,11 @@ grpc_transport *grpc_create_inproc_transport(
     grpc_exec_ctx *exec_ctx, const grpc_channel_args *channel_args,
     grpc_endpoint *ep, int is_client);
 
+grpc_error *grpc_server_add_inproc_port(grpc_server *server, const char *addr);
+
+grpc_channel *grpc_inproc_channel_create(const char *target,
+					 grpc_channel_args *channel_args,
+					 void *reserved);
 #ifdef __cplusplus
 }
 #endif
