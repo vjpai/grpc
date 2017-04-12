@@ -202,6 +202,7 @@ filegroups:
   - src/core/lib/iomgr/ev_posix.h
   - src/core/lib/iomgr/exec_ctx.h
   - src/core/lib/iomgr/executor.h
+  - src/core/lib/iomgr/inproc_address.h
   - src/core/lib/iomgr/iocp_windows.h
   - src/core/lib/iomgr/iomgr.h
   - src/core/lib/iomgr/iomgr_internal.h
@@ -309,6 +310,7 @@ filegroups:
   - src/core/lib/iomgr/ev_posix.c
   - src/core/lib/iomgr/exec_ctx.c
   - src/core/lib/iomgr/executor.c
+  - src/core/lib/iomgr/inproc_address.c
   - src/core/lib/iomgr/iocp_windows.c
   - src/core/lib/iomgr/iomgr.c
   - src/core/lib/iomgr/iomgr_posix.c
@@ -797,6 +799,17 @@ filegroups:
   - grpc_base
   - grpc_transport_chttp2
   - grpc_http_filters
+- name: grpc_transport_inproc
+  headers:
+  - src/core/ext/transport/inproc/inproc_client_server.h
+  - src/core/ext/transport/inproc/inproc_transport.h
+  src:
+  - src/core/ext/transport/inproc/inproc_client_server.c
+  - src/core/ext/transport/inproc/inproc_plugin.c
+  - src/core/ext/transport/inproc/inproc_transport.c
+  plugin: grpc_inproc_plugin
+  uses:
+  - grpc_base
 - name: nanopb
   headers:
   - third_party/nanopb/pb.h
@@ -1019,6 +1032,7 @@ libs:
   - grpc_transport_chttp2_client_secure
   - grpc_transport_chttp2_server_insecure
   - grpc_transport_chttp2_client_insecure
+  - grpc_transport_inproc
   - grpc_lb_policy_grpclb_secure
   - grpc_lb_policy_pick_first
   - grpc_lb_policy_round_robin
@@ -1119,6 +1133,7 @@ libs:
   - grpc_base
   - grpc_transport_chttp2_server_insecure
   - grpc_transport_chttp2_client_insecure
+  - grpc_transport_inproc
   - grpc_resolver_dns_ares
   - grpc_resolver_dns_native
   - grpc_resolver_sockaddr
@@ -1173,6 +1188,7 @@ libs:
   - src/cpp/common/secure_auth_context.cc
   - src/cpp/common/secure_channel_arguments.cc
   - src/cpp/common/secure_create_auth_context.cc
+  - src/cpp/server/inproc_server_credentials.cc
   - src/cpp/server/insecure_server_credentials.cc
   - src/cpp/server/secure_server_credentials.cc
   deps:
@@ -1290,6 +1306,7 @@ libs:
   src:
   - src/cpp/client/insecure_credentials.cc
   - src/cpp/common/insecure_create_auth_context.cc
+  - src/cpp/server/inproc_server_credentials.cc
   - src/cpp/server/insecure_server_credentials.cc
   deps:
   - gpr

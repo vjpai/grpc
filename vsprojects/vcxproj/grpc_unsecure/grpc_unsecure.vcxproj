@@ -315,6 +315,7 @@
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\ev_posix.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\exec_ctx.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\executor.h" />
+    <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\inproc_address.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\iocp_windows.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\iomgr.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\lib\iomgr\iomgr_internal.h" />
@@ -440,6 +441,8 @@
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\subchannel_index.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\uri_parser.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\deadline\deadline_filter.h" />
+    <ClInclude Include="$(SolutionDir)\..\src\core\ext\transport\inproc\inproc_client_server.h" />
+    <ClInclude Include="$(SolutionDir)\..\src\core\ext\transport\inproc\inproc_transport.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\resolver\dns\c_ares\grpc_ares_ev_driver.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\resolver\dns\c_ares\grpc_ares_wrapper.h" />
     <ClInclude Include="$(SolutionDir)\..\src\core\ext\filters\load_reporting\load_reporting.h" />
@@ -525,6 +528,8 @@
     <ClCompile Include="$(SolutionDir)\..\src\core\lib\iomgr\exec_ctx.c">
     </ClCompile>
     <ClCompile Include="$(SolutionDir)\..\src\core\lib\iomgr\executor.c">
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)\..\src\core\lib\iomgr\inproc_address.c">
     </ClCompile>
     <ClCompile Include="$(SolutionDir)\..\src\core\lib\iomgr\iocp_windows.c">
     </ClCompile>
@@ -821,6 +826,12 @@
     <ClCompile Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\uri_parser.c">
     </ClCompile>
     <ClCompile Include="$(SolutionDir)\..\src\core\ext\filters\deadline\deadline_filter.c">
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)\..\src\core\ext\transport\inproc\inproc_client_server.c">
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)\..\src\core\ext\transport\inproc\inproc_plugin.c">
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)\..\src\core\ext\transport\inproc\inproc_transport.c">
     </ClCompile>
     <ClCompile Include="$(SolutionDir)\..\src\core\ext\filters\client_channel\resolver\dns\c_ares\dns_resolver_ares.c">
     </ClCompile>

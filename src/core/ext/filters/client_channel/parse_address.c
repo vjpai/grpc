@@ -32,6 +32,7 @@
  */
 
 #include "src/core/ext/filters/client_channel/parse_address.h"
+#include "src/core/lib/iomgr/inproc_address.h"
 #include "src/core/lib/iomgr/sockaddr.h"
 
 #include <stdio.h>
@@ -187,6 +188,23 @@ done:
   return result;
 }
 
+bool grpc_parse_inproc(const grpc_uri *uri,
+		       grpc_resolved_address *resolved_addr) {
+  if (strcmp("inproc", uri->scheme) != 0) {
+    gpr_log(GPR_ERROR, "Expected 'inproc' scheme, got '%s'", uri->scheme);
+    return false;
+  }
+  // Also don't allow excessively long path names
+  grpc_sockaddr_inproc *in = (grpc_sockaddr_inproc *)resolved_addr->addr;
+  in->sa_family = AF_UNSPEC;
+  const size_t maxlen = sizeof(in->sa_path);
+  const size_t path_len = strnlen(uri->path, maxlen);
+  if (path_len == maxlen) return false;
+  strcpy(in->sa_path, uri->path);
+  resolved_addr->len = sizeof(*in);
+  return true;
+}
+
 bool grpc_parse_uri(const grpc_uri *uri, grpc_resolved_address *resolved_addr) {
   if (strcmp("unix", uri->scheme) == 0) {
     return grpc_parse_unix(uri, resolved_addr);
@@ -194,7 +212,9 @@ bool grpc_parse_uri(const grpc_uri *uri, grpc_resolved_address *resolved_addr) {
     return grpc_parse_ipv4(uri, resolved_addr);
   } else if (strcmp("ipv6", uri->scheme) == 0) {
     return grpc_parse_ipv6(uri, resolved_addr);
-  }
+  } else if (strcmp("inproc", uri->scheme) == 0) {
+    return grpc_parse_inproc(uri, resolved_addr);
+  } 
   gpr_log(GPR_ERROR, "Can't parse scheme '%s'", uri->scheme);
   return false;
 }

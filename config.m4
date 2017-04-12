@@ -113,6 +113,7 @@ if test "$PHP_GRPC" != "no"; then
     src/core/lib/iomgr/ev_posix.c \
     src/core/lib/iomgr/exec_ctx.c \
     src/core/lib/iomgr/executor.c \
+    src/core/lib/iomgr/inproc_address.c \
     src/core/lib/iomgr/iocp_windows.c \
     src/core/lib/iomgr/iomgr.c \
     src/core/lib/iomgr/iomgr_posix.c \
@@ -291,6 +292,9 @@ if test "$PHP_GRPC" != "no"; then
     src/core/ext/transport/chttp2/server/insecure/server_chttp2_posix.c \
     src/core/ext/transport/chttp2/client/insecure/channel_create.c \
     src/core/ext/transport/chttp2/client/insecure/channel_create_posix.c \
+    src/core/ext/transport/inproc/inproc_client_server.c \
+    src/core/ext/transport/inproc/inproc_plugin.c \
+    src/core/ext/transport/inproc/inproc_transport.c \
     src/core/ext/filters/client_channel/lb_policy/grpclb/grpclb.c \
     src/core/ext/filters/client_channel/lb_policy/grpclb/grpclb_channel_secure.c \
     src/core/ext/filters/client_channel/lb_policy/grpclb/load_balancer_api.c \
@@ -711,6 +715,7 @@ if test "$PHP_GRPC" != "no"; then
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/ext/transport/chttp2/server/insecure)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/ext/transport/chttp2/server/secure)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/ext/transport/chttp2/transport)
+  PHP_ADD_BUILD_DIR($ext_builddir/src/core/ext/transport/inproc)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/lib/channel)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/lib/compression)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/lib/debug)

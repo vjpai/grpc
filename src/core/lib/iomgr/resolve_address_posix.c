@@ -34,6 +34,7 @@
 #include "src/core/lib/iomgr/port.h"
 #ifdef GRPC_POSIX_SOCKET
 
+#include "src/core/lib/iomgr/inproc_address.h"
 #include "src/core/lib/iomgr/sockaddr.h"
 
 #include "src/core/lib/iomgr/resolve_address.h"
@@ -69,6 +70,12 @@ static grpc_error *blocking_resolve_address_impl(
       name[4] == ':' && name[5] != 0) {
     return grpc_resolve_unix_domain_address(name + 5, addresses);
   }
+  if (name[0] == 'i' && name[1] == 'n' && name[2] == 'p' && name[3] == 'r' &&
+      name[4] == 'o' && name[5] == 'c' &&
+      name[6] == ':' && name[7] != 0) {
+    return grpc_resolve_inproc_address(name + 7, addresses);
+  }
+
 
   /* parse name, splitting it into host and port parts */
   gpr_split_host_port(name, &host, &port);
