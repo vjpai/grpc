@@ -77,6 +77,7 @@ grpc_cc_libraries(
         "grpc_lb_policy_round_robin",
         "grpc_load_reporting",
         "grpc_max_age_filter",
+        "grpc_resolver_dns_ares",
         "grpc_resolver_dns_native",
         "grpc_resolver_sockaddr",
         "grpc_transport_chttp2_client_insecure",
@@ -87,12 +88,13 @@ grpc_cc_libraries(
     additional_dep_list = [
         [
             "grpc_secure",
-            "grpc_resolver_dns_ares",
             "grpc_lb_policy_grpclb_secure",
             "grpc_transport_chttp2_client_secure",
             "grpc_transport_chttp2_server_secure",
         ],
-        [],
+        [
+            "grpc_lb_policy_grpclb",
+	],
     ],
 )
 
