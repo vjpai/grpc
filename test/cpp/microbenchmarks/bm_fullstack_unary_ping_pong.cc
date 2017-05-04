@@ -132,6 +132,10 @@ BENCHMARK_TEMPLATE(BM_UnaryPingPong, UDS, NoOpMutator, NoOpMutator)
     ->Args({0, 0});
 BENCHMARK_TEMPLATE(BM_UnaryPingPong, MinUDS, NoOpMutator, NoOpMutator)
     ->Args({0, 0});
+BENCHMARK_TEMPLATE(BM_UnaryPingPong, InProcess, NoOpMutator, NoOpMutator)
+    ->Apply(SweepSizesArgs);
+BENCHMARK_TEMPLATE(BM_UnaryPingPong, MinInProcess, NoOpMutator, NoOpMutator)
+    ->Apply(SweepSizesArgs);
 BENCHMARK_TEMPLATE(BM_UnaryPingPong, SockPair, NoOpMutator, NoOpMutator)
     ->Args({0, 0});
 BENCHMARK_TEMPLATE(BM_UnaryPingPong, MinSockPair, NoOpMutator, NoOpMutator)
