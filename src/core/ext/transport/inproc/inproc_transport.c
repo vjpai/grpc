@@ -774,6 +774,8 @@ static void cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
       s->recv_trailing_md_op = NULL;
     }
   }
+
+  GRPC_ERROR_UNREF(error);
 }
 
 static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
@@ -804,7 +806,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     error = GRPC_ERROR_REF(s->cancel_self_error);
   } else if (op->cancel_stream) {
     error = GRPC_ERROR_REF(op->payload->cancel_stream.cancel_error);
-    cancel_stream(exec_ctx, s, error);
+    cancel_stream(exec_ctx, s, GRPC_ERROR_REF(error));
     // Let this op complete with the error also
   } else {
     INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %s%s%s%s%s%s", s,
@@ -1005,8 +1007,6 @@ static void perform_transport_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     do_close = true;
     GRPC_ERROR_UNREF(op->disconnect_with_error);
   }
-
-  // Reserve this space for other cases where the transport will be closed
 
   if (do_close) {
     close_transport_locked(exec_ctx, t);
