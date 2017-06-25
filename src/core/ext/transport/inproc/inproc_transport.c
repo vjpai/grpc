@@ -723,11 +723,13 @@ done:
 
 static grpc_closure do_nothing_closure;
 
-static void cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
+static bool cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                           grpc_error *error) {
+  bool ret = false; // was the cancel accepted
   INPROC_LOG(GPR_DEBUG, "cancel_stream %p with %s", s,
              grpc_error_string(error));
   if (s->cancel_self_error == GRPC_ERROR_NONE) {
+    ret = true;
     s->cancel_self_error = GRPC_ERROR_REF(error);
     if (s->read_closure_needed) {
       GRPC_CLOSURE_SCHED(exec_ctx, &s->read_closure,
@@ -776,6 +778,7 @@ static void cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
   }
 
   GRPC_ERROR_UNREF(error);
+  return ret;
 }
 
 static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
@@ -801,13 +804,17 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     on_complete = &do_nothing_closure;
   }
 
-  // Self-cancellation takes precedence but other-cancellation may not
-  if (s->cancel_self_error != GRPC_ERROR_NONE) {
-    error = GRPC_ERROR_REF(s->cancel_self_error);
-  } else if (op->cancel_stream) {
+  if (op->cancel_stream) {
     error = GRPC_ERROR_REF(op->payload->cancel_stream.cancel_error);
-    cancel_stream(exec_ctx, s, GRPC_ERROR_REF(error));
+    if (!cancel_stream(exec_ctx, s, GRPC_ERROR_REF(error)) &&
+	(s->cancel_self_error != error)) {
+      // already canceled before so we won't unref this at destroy
+      GRPC_ERROR_UNREF(error);
+    }
     // Let this op complete with the error also
+  } else if (s->cancel_self_error != GRPC_ERROR_NONE) {
+    // already self-canceled so still give it an error
+    error = GRPC_ERROR_REF(s->cancel_self_error);
   } else {
     INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %s%s%s%s%s%s", s,
                op->send_initial_metadata ? "send_initial_metadata " : "",
