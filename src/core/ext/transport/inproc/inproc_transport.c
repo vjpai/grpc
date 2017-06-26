@@ -725,7 +725,7 @@ static grpc_closure do_nothing_closure;
 
 static bool cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                           grpc_error *error) {
-  bool ret = false; // was the cancel accepted
+  bool ret = false;  // was the cancel accepted
   INPROC_LOG(GPR_DEBUG, "cancel_stream %p with %s", s,
              grpc_error_string(error));
   if (s->cancel_self_error == GRPC_ERROR_NONE) {
@@ -807,7 +807,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   if (op->cancel_stream) {
     error = GRPC_ERROR_REF(op->payload->cancel_stream.cancel_error);
     if (!cancel_stream(exec_ctx, s, GRPC_ERROR_REF(error)) &&
-	(s->cancel_self_error != error)) {
+        (s->cancel_self_error != error)) {
       // already canceled before so we won't unref this at destroy
       GRPC_ERROR_UNREF(error);
     }
