@@ -452,8 +452,6 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     }
   }
   if (s->recv_initial_md_op) {
-    INPROC_LOG(GPR_DEBUG, "fail_helper %p scheduling initial-metadata-ready %p",
-               s, error);
     grpc_error *err;
     if (!s->t->is_client) {
       // If this is a server, provide initial metadata with a path and authority
@@ -482,6 +480,8 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     } else {
       err = GRPC_ERROR_REF(error);
     }
+    INPROC_LOG(GPR_DEBUG, "fail_helper %p scheduling initial-metadata-ready %p %p",
+               s, error, err);
     GRPC_CLOSURE_SCHED(exec_ctx,
                        s->recv_initial_md_op->payload->recv_initial_metadata
                            .recv_initial_metadata_ready,
@@ -816,13 +816,13 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     // already self-canceled so still give it an error
     error = GRPC_ERROR_REF(s->cancel_self_error);
   } else {
-    INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %s%s%s%s%s%s", s,
-               op->send_initial_metadata ? "send_initial_metadata " : "",
-               op->send_message ? "send_message " : "",
-               op->send_trailing_metadata ? "send_trailing_metadata " : "",
-               op->recv_initial_metadata ? "recv_initial_metadata " : "",
-               op->recv_message ? "recv_message " : "",
-               op->recv_trailing_metadata ? "recv_trailing_metadata " : "");
+    INPROC_LOG(GPR_DEBUG, "perform_stream_op %p%s%s%s%s%s%s", s,
+               op->send_initial_metadata ? " send_initial_metadata" : "",
+               op->send_message ? " send_message" : "",
+               op->send_trailing_metadata ? " send_trailing_metadata" : "",
+               op->recv_initial_metadata ? " recv_initial_metadata" : "",
+               op->recv_message ? " recv_message" : "",
+               op->recv_trailing_metadata ? " recv_trailing_metadata" : "");
   }
 
   if (error == GRPC_ERROR_NONE &&
