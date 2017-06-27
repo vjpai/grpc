@@ -529,46 +529,51 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
   // Get what we want based on our ops wanted
   // Schedule our appropriate closures
   // and then return to read_closure_needed state if still needed
+
+  // Since this is a closure directly invoked by the combiner, it should not
+  // unref the error explicitly. That will be done implicitly by the combiner
+  grpc_error *new_err = GRPC_ERROR_NONE;
+
   INPROC_LOG(GPR_DEBUG, "read_state_machine %p", arg);
   inproc_stream *s = (inproc_stream *)arg;
   gpr_mu_lock(&s->t->mu->mu);
   // cancellation takes precedence
   if (s->cancel_self_error != GRPC_ERROR_NONE) {
-    GRPC_ERROR_UNREF(error);
-    error = GRPC_ERROR_REF(s->cancel_self_error);
+    fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(s->cancel_self_error));
+    goto done;
   } else if (s->cancel_other_error != GRPC_ERROR_NONE) {
-    GRPC_ERROR_UNREF(error);
-    error = GRPC_ERROR_REF(s->cancel_other_error);
-  }
-  if (error != GRPC_ERROR_NONE) {
+    fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(s->cancel_other_error));
+    goto done;
+  } else if (error != GRPC_ERROR_NONE) {
     fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
     goto done;
   }
+
   if (s->recv_initial_md_op) {
     if (!s->to_read_initial_md_filled) {
       // We entered the state machine on some other kind of read even though
       // we still haven't satisfied initial md . That's an error.
-      error =
+      new_err =
           GRPC_ERROR_CREATE_FROM_STATIC_STRING("Unexpected frame sequencing");
       INPROC_LOG(GPR_DEBUG,
                  "read_state_machine %p scheduling on_complete errors for no "
                  "initial md %p",
-                 s, error);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
+                 s, new_err);
+      fail_helper_locked(exec_ctx, s, new_err);
       goto done;
     } else if (s->initial_md_recvd) {
-      error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd initial md");
+      new_err = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd initial md");
       INPROC_LOG(
           GPR_DEBUG,
           "read_state_machine %p scheduling on_complete errors for already "
           "recvd initial md %p",
-          s, error);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
+          s, new_err);
+      fail_helper_locked(exec_ctx, s, new_err);
       goto done;
     }
 
     s->initial_md_recvd = true;
-    error = fill_in_metadata(
+    new_err = fill_in_metadata(
         exec_ctx, s, &s->to_read_initial_md, s->to_read_initial_md_flags,
         s->recv_initial_md_op->payload->recv_initial_metadata
             .recv_initial_metadata,
@@ -579,33 +584,33 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     s->to_read_initial_md_filled = false;
     INPROC_LOG(GPR_DEBUG,
                "read_state_machine %p scheduling initial-metadata-ready %p", s,
-               error);
+               new_err);
     GRPC_CLOSURE_SCHED(exec_ctx,
                        s->recv_initial_md_op->payload->recv_initial_metadata
                            .recv_initial_metadata_ready,
-                       GRPC_ERROR_REF(error));
+                       GRPC_ERROR_REF(new_err));
     if ((s->recv_initial_md_op != s->recv_message_op) &&
         (s->recv_initial_md_op != s->recv_trailing_md_op)) {
       INPROC_LOG(
           GPR_DEBUG,
           "read_state_machine %p scheduling initial-metadata-on-complete %p", s,
-          error);
+          new_err);
       GRPC_CLOSURE_SCHED(exec_ctx, s->recv_initial_md_op->on_complete,
-                         GRPC_ERROR_REF(error));
+                         GRPC_ERROR_REF(new_err));
     }
     s->recv_initial_md_op = NULL;
 
-    if (error != GRPC_ERROR_NONE) {
+    if (new_err != GRPC_ERROR_NONE) {
       INPROC_LOG(GPR_DEBUG,
                  "read_state_machine %p scheduling on_complete errors2 %p", s,
-                 error);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
+                 new_err);
+      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
       goto done;
     }
   }
   if (s->to_read_initial_md_filled) {
-    error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Unexpected recv frame");
-    fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
+    new_err = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Unexpected recv frame");
+    fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
     goto done;
   }
   if (!slice_buffer_list_empty(&s->to_read_message) && s->recv_message_op) {
@@ -621,21 +626,21 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     if (s->recv_message_op != s->recv_trailing_md_op) {
       INPROC_LOG(GPR_DEBUG,
                  "read_state_machine %p scheduling message-on-complete %p", s,
-                 error);
+                 new_err);
       GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
-                         GRPC_ERROR_REF(error));
+                         GRPC_ERROR_REF(new_err));
     }
     s->recv_message_op = NULL;
   }
   if (s->to_read_trailing_md_filled) {
     if (s->trailing_md_recvd) {
-      error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd trailing md");
+      new_err = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd trailing md");
       INPROC_LOG(
           GPR_DEBUG,
           "read_state_machine %p scheduling on_complete errors for already "
           "recvd trailing md %p",
-          s, error);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(error));
+          s, new_err);
+      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
       goto done;
     }
     if (s->recv_message_op != NULL) {
@@ -650,16 +655,16 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
       if (s->recv_message_op != s->recv_trailing_md_op) {
         INPROC_LOG(GPR_DEBUG,
                    "read_state_machine %p scheduling message-on-complete %p", s,
-                   error);
+                   new_err);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
-                           GRPC_ERROR_REF(error));
+                           GRPC_ERROR_REF(new_err));
       }
       s->recv_message_op = NULL;
     }
     if (s->recv_trailing_md_op != NULL) {
       // We wanted trailing metadata and we got it
       s->trailing_md_recvd = true;
-      error =
+      new_err =
           fill_in_metadata(exec_ctx, s, &s->to_read_trailing_md, 0,
                            s->recv_trailing_md_op->payload
                                ->recv_trailing_metadata.recv_trailing_metadata,
@@ -676,15 +681,15 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
         INPROC_LOG(
             GPR_DEBUG,
             "read_state_machine %p scheduling trailing-md-on-complete %p", s,
-            error);
+            new_err);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
-                           GRPC_ERROR_REF(error));
+                           GRPC_ERROR_REF(new_err));
         s->recv_trailing_md_op = NULL;
       } else {
         INPROC_LOG(GPR_DEBUG,
                    "read_state_machine %p server needs to delay handling "
                    "trailing-md-on-complete %p",
-                   s, error);
+                   s, new_err);
       }
     } else {
       INPROC_LOG(
@@ -703,9 +708,9 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     if (s->recv_message_op != s->recv_trailing_md_op) {
       INPROC_LOG(GPR_DEBUG,
                  "read_state_machine %p scheduling message-on-complete %p", s,
-                 error);
+                 new_err);
       GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
-                         GRPC_ERROR_REF(error));
+                         GRPC_ERROR_REF(new_err));
     }
     s->recv_message_op = NULL;
   }
@@ -718,7 +723,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
   }
 done:
   gpr_mu_unlock(&s->t->mu->mu);
-  GRPC_ERROR_UNREF(error);
+  GRPC_ERROR_UNREF(new_err);
 }
 
 static grpc_closure do_nothing_closure;
@@ -805,13 +810,8 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   }
 
   if (op->cancel_stream) {
-    error = GRPC_ERROR_REF(op->payload->cancel_stream.cancel_error);
-    if (!cancel_stream(exec_ctx, s, GRPC_ERROR_REF(error)) &&
-        (s->cancel_self_error != error)) {
-      // already canceled before so we won't unref this at destroy
-      GRPC_ERROR_UNREF(error);
-    }
-    // Let this op complete with the error also
+    cancel_stream(exec_ctx, s, op->payload->cancel_stream.cancel_error);
+    // this op can complete without an error
   } else if (s->cancel_self_error != GRPC_ERROR_NONE) {
     // already self-canceled so still give it an error
     error = GRPC_ERROR_REF(s->cancel_self_error);
@@ -1148,9 +1148,7 @@ static const grpc_transport_vtable inproc_vtable = {
 /*******************************************************************************
  * GLOBAL INIT AND DESTROY
  */
-static void do_nothing(grpc_exec_ctx *exec_ctx, void *arg, grpc_error *error) {
-  GRPC_ERROR_UNREF(error);
-}
+static void do_nothing(grpc_exec_ctx *exec_ctx, void *arg, grpc_error *error) { }
 
 void grpc_inproc_transport_init(void) {
   grpc_exec_ctx exec_ctx = GRPC_EXEC_CTX_INIT;
