@@ -217,21 +217,20 @@ static void ref_transport(inproc_transport *t) {
   gpr_ref(&t->refs);
 }
 
-static void really_destroy_transport(inproc_transport *t) {
+static void really_destroy_transport(grpc_exec_ctx *exec_ctx,
+                                     inproc_transport *t) {
   INPROC_LOG(GPR_DEBUG, "really_destroy_transport %p", t);
-  grpc_exec_ctx exec_ctx = GRPC_EXEC_CTX_INIT;
-  grpc_connectivity_state_destroy(&exec_ctx, &t->connectivity);
+  grpc_connectivity_state_destroy(exec_ctx, &t->connectivity);
   if (gpr_unref(&t->mu->refs)) {
     gpr_free(t->mu);
   }
   gpr_free(t);
-  grpc_exec_ctx_finish(&exec_ctx);
 }
 
-static void unref_transport(inproc_transport *t) {
+static void unref_transport(grpc_exec_ctx *exec_ctx, inproc_transport *t) {
   INPROC_LOG(GPR_DEBUG, "unref_transport %p", t);
   if (gpr_unref(&t->refs)) {
-    really_destroy_transport(t);
+    really_destroy_transport(exec_ctx, t);
   }
 }
 
@@ -267,7 +266,7 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   }
   gpr_mu_unlock(&s->t->mu->mu);
 
-  unref_transport(s->t);
+  unref_transport(exec_ctx, s->t);
 
   if (s->closure_at_destroy) {
     GRPC_CLOSURE_SCHED(exec_ctx, s->closure_at_destroy, GRPC_ERROR_NONE);
@@ -1040,8 +1039,8 @@ static void destroy_transport(grpc_exec_ctx *exec_ctx, grpc_transport *gt) {
   gpr_mu_lock(&t->mu->mu);
   close_transport_locked(exec_ctx, t);
   gpr_mu_unlock(&t->mu->mu);
-  unref_transport(t->other_side);
-  unref_transport(t);
+  unref_transport(exec_ctx, t->other_side);
+  unref_transport(exec_ctx, t);
 }
 
 /*******************************************************************************
