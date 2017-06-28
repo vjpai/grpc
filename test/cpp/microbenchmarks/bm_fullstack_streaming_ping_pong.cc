@@ -19,12 +19,15 @@
 /* Benchmark gRPC end2end in various configurations */
 
 #include <benchmark/benchmark.h>
+#include <gflags/gflags.h>
 #include <sstream>
 #include "src/core/lib/profiling/timers.h"
 #include "src/cpp/client/create_channel_internal.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
 #include "test/cpp/microbenchmarks/fullstack_context_mutators.h"
 #include "test/cpp/microbenchmarks/fullstack_fixtures.h"
+
+DEFINE_bool(profile, false, "Enable profiling of selected tests");
 
 namespace grpc {
 namespace testing {
@@ -181,6 +184,10 @@ static void BM_StreamingPingPongMsgs(benchmark::State& state) {
       need_tags &= ~(1 << i);
     }
 
+    std::string bm_name = std::string(__func__) + "_" +
+      typeid(Fixture).name() + "_" + std::to_string(msg_size);
+    ScopedProfile(bm_name.c_str(), FLAGS_profile);
+    
     while (state.KeepRunning()) {
       GPR_TIMER_SCOPE("BenchmarkCycle", 0);
       request_rw->Write(send_request, tag(0));   // Start client send

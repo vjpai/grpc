@@ -23,6 +23,7 @@
 
 extern "C" {
 #include <grpc/support/port_platform.h>
+#include "test/core/util/grpc_profiler.h"
 #include "test/core/util/memory_counters.h"
 }
 
@@ -76,6 +77,19 @@ class TrackCounters {
       gpr_atm_no_barrier_load(&gpr_now_call_count);
   grpc_memory_counters counters_at_start_ = grpc_memory_counters_snapshot();
 #endif
+};
+
+class ScopedProfile final {
+ public:
+  ScopedProfile(const char* filename, bool enable) : enable_(enable) {
+    if (enable_) grpc_profiler_start(filename);
+  }
+  ~ScopedProfile() {
+    if (enable_) grpc_profiler_stop();
+  }
+
+ private:
+  const bool enable_;
 };
 
 #endif
