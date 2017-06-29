@@ -23,6 +23,7 @@
 #include <grpc/support/time.h>
 #include <string.h>
 #include "src/core/lib/channel/channel_args.h"
+#include "src/core/lib/profiling/timers.h"
 #include "src/core/lib/slice/slice_internal.h"
 #include "src/core/lib/surface/api_trace.h"
 #include "src/core/lib/surface/channel.h"
@@ -240,6 +241,7 @@ static void ref_stream(inproc_stream *s) {
 }
 
 static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
+  GPR_TIMER_BEGIN("really_destroy_stream", 0);
   INPROC_LOG(GPR_DEBUG, "really_destroy_stream %p", s);
   // Remove the stream contents and remove from the transport's linked list
   gpr_mu_lock(&s->t->mu->mu);
@@ -271,6 +273,7 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   if (s->closure_at_destroy) {
     GRPC_CLOSURE_SCHED(exec_ctx, s->closure_at_destroy, GRPC_ERROR_NONE);
   }
+  GPR_TIMER_END("really_destroy_stream", 0);
 }
 
 static void unref_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
@@ -300,6 +303,7 @@ static grpc_error *fill_in_metadata(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                                     const grpc_metadata_batch *metadata,
                                     uint32_t flags, grpc_metadata_batch *out_md,
                                     uint32_t *outflags, bool *markfilled) {
+  GPR_TIMER_BEGIN("fill_in_metadata", 0);
   if (outflags != NULL) {
     *outflags = flags;
   }
@@ -316,6 +320,7 @@ static grpc_error *fill_in_metadata(grpc_exec_ctx *exec_ctx, inproc_stream *s,
 
     error = grpc_metadata_batch_link_tail(exec_ctx, out_md, nelem);
   }
+  GPR_TIMER_END("fill_in_metadata", 0);
   return error;
 }
 
@@ -323,6 +328,7 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                        grpc_stream *gs, grpc_stream_refcount *refcount,
                        const void *server_data, gpr_arena *arena) {
   INPROC_LOG(GPR_DEBUG, "init_stream %p %p %p", gt, gs, server_data);
+  GPR_TIMER_BEGIN("init_stream", 0);
   inproc_transport *t = (inproc_transport *)gt;
   inproc_stream *s = (inproc_stream *)gs;
   s->arena = arena;
@@ -414,11 +420,13 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
 
     gpr_mu_unlock(&s->t->mu->mu);
   }
+  GPR_TIMER_END("init_stream", 0);
   return 0;  // return value is not important
 }
 
 static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                                grpc_error *error) {
+  GPR_TIMER_BEGIN("fail_helper_locked", 0);
   INPROC_LOG(GPR_DEBUG, "read_state_machine %p fail_helper", s);
   // If we're failing this side, we need to make sure that
   // we also send or have already sent trailing metadata
@@ -521,6 +529,7 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     s->recv_trailing_md_op = NULL;
   }
   GRPC_ERROR_UNREF(error);
+  GPR_TIMER_END("fail_helper_locked", 0);
 }
 
 static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
@@ -532,6 +541,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
 
   // Since this is a closure directly invoked by the combiner, it should not
   // unref the error explicitly. That will be done implicitly by the combiner
+  GPR_TIMER_BEGIN("read_state_machine", 0);
   grpc_error *new_err = GRPC_ERROR_NONE;
 
   INPROC_LOG(GPR_DEBUG, "read_state_machine %p", arg);
@@ -726,12 +736,14 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
 done:
   gpr_mu_unlock(&s->t->mu->mu);
   GRPC_ERROR_UNREF(new_err);
+  GPR_TIMER_END("read_state_machine", 0);
 }
 
 static grpc_closure do_nothing_closure;
 
 static bool cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                           grpc_error *error) {
+  GPR_TIMER_BEGIN("cancel_stream", 0);
   bool ret = false;  // was the cancel accepted
   INPROC_LOG(GPR_DEBUG, "cancel_stream %p with %s", s,
              grpc_error_string(error));
@@ -785,6 +797,7 @@ static bool cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
   }
 
   GRPC_ERROR_UNREF(error);
+  GPR_TIMER_END("cancel_stream", 0);
   return ret;
 }
 
@@ -792,6 +805,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                               grpc_stream *gs,
                               grpc_transport_stream_op_batch *op) {
   INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %p %p", gt, gs, op);
+  GPR_TIMER_BEGIN("perform_stream_op", 0);
   inproc_stream *s = (inproc_stream *)gs;
   gpr_mu_lock(&s->t->mu->mu);
 
@@ -965,10 +979,12 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   }
   gpr_mu_unlock(&s->t->mu->mu);
   GRPC_ERROR_UNREF(error);
+  GPR_TIMER_END("perform_stream_op", 0);
 }
 
 static void close_transport_locked(grpc_exec_ctx *exec_ctx,
                                    inproc_transport *t) {
+  GPR_TIMER_BEGIN("close_transport_locked", 0);
   INPROC_LOG(GPR_DEBUG, "close_transport %p %d", t, t->is_closed);
   grpc_connectivity_state_set(
       exec_ctx, &t->connectivity, GRPC_CHANNEL_SHUTDOWN,
@@ -987,10 +1003,12 @@ static void close_transport_locked(grpc_exec_ctx *exec_ctx,
               GRPC_ERROR_INT_GRPC_STATUS, GRPC_STATUS_UNAVAILABLE));
     }
   }
+  GPR_TIMER_END("close_transport_locked", 0);
 }
 
 static void perform_transport_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                                  grpc_transport_op *op) {
+  GPR_TIMER_BEGIN("perform_transport_op", 0);
   inproc_transport *t = (inproc_transport *)gt;
   INPROC_LOG(GPR_DEBUG, "perform_transport_op %p %p", t, op);
   gpr_mu_lock(&t->mu->mu);
@@ -1021,19 +1039,23 @@ static void perform_transport_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     close_transport_locked(exec_ctx, t);
   }
   gpr_mu_unlock(&t->mu->mu);
+  GPR_TIMER_END("perform_transport_op", 0);
 }
 
 static void destroy_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                            grpc_stream *gs,
                            grpc_closure *then_schedule_closure) {
+  GPR_TIMER_BEGIN("destroy_stream", 0);
   INPROC_LOG(GPR_DEBUG, "destroy_stream %p %p", gs, then_schedule_closure);
   inproc_stream *s = (inproc_stream *)gs;
   s->closure_at_destroy = then_schedule_closure;
   unref_stream(exec_ctx, s);
   unref_stream(exec_ctx, s->other_side);
+  GPR_TIMER_END("destroy_stream", 0);
 }
 
 static void destroy_transport(grpc_exec_ctx *exec_ctx, grpc_transport *gt) {
+  GPR_TIMER_BEGIN("destroy_transport", 0);
   inproc_transport *t = (inproc_transport *)gt;
   INPROC_LOG(GPR_DEBUG, "destroy_transport %p", t);
   gpr_mu_lock(&t->mu->mu);
@@ -1041,6 +1063,7 @@ static void destroy_transport(grpc_exec_ctx *exec_ctx, grpc_transport *gt) {
   gpr_mu_unlock(&t->mu->mu);
   unref_transport(exec_ctx, t->other_side);
   unref_transport(exec_ctx, t);
+  GPR_TIMER_END("destroy_transport", 0);
 }
 
 /*******************************************************************************
@@ -1051,6 +1074,7 @@ static void inproc_transports_create(grpc_exec_ctx *exec_ctx,
                                      const grpc_channel_args *server_args,
                                      grpc_transport **client_transport,
                                      const grpc_channel_args *client_args) {
+  GPR_TIMER_BEGIN("inproc_transports_create", 0);
   INPROC_LOG(GPR_DEBUG, "inproc_transports_create");
   inproc_transport *st = gpr_zalloc(sizeof(*st));
   inproc_transport *ct = gpr_zalloc(sizeof(*ct));
@@ -1076,11 +1100,13 @@ static void inproc_transports_create(grpc_exec_ctx *exec_ctx,
   ct->stream_list = NULL;
   *server_transport = (grpc_transport *)st;
   *client_transport = (grpc_transport *)ct;
+  GPR_TIMER_END("inproc_transports_create", 0);
 }
 
 grpc_channel *grpc_inproc_channel_create(grpc_server *server,
                                          grpc_channel_args *args,
                                          void *reserved) {
+  GPR_TIMER_BEGIN("inproc_channel_create", 0);
   GRPC_API_TRACE("grpc_inproc_channel_create(server=%p, args=%p)", 2,
                  (server, args));
 
@@ -1114,6 +1140,7 @@ grpc_channel *grpc_inproc_channel_create(grpc_server *server,
   // Now finish scheduled operations
   grpc_exec_ctx_finish(&exec_ctx);
 
+  GPR_TIMER_END("inproc_channel_create", 0);
   return channel;
 }
 
