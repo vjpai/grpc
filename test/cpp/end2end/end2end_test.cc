@@ -1694,7 +1694,7 @@ std::vector<TestScenario> CreateTestScenarios(bool use_proxy,
     credentials_types =
         GetCredentialsProvider()->GetSecureCredentialsTypeList();
   }
-  auto insec_ok = []() {
+  auto insec_ok = [] {
     // Only allow insecure credentials type when it is registered with the
     // provider. User may create providers that do not have insecure.
     return GetCredentialsProvider()->GetChannelCredentials(

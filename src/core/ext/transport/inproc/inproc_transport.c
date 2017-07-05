@@ -256,12 +256,12 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
 
   inproc_stream *p = s->stream_list_prev;
   inproc_stream *n = s->stream_list_next;
-  if (p) {
+  if (p != NULL) {
     p->stream_list_next = n;
   } else {
     s->t->stream_list = n;
   }
-  if (n) {
+  if (n != NULL) {
     n->stream_list_prev = p;
   }
   gpr_mu_unlock(&s->t->mu->mu);
@@ -382,6 +382,7 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     ref_stream(s);
 
     // Now we are about to affect the other side, so lock the transport
+    // to make sure that it doesn't get destroyed
     gpr_mu_lock(&s->t->mu->mu);
     cs->other_side = s;
     // Now transfer from the other side's write_buffer if any to the to_read
@@ -512,7 +513,7 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     }
     s->recv_message_op = NULL;
   }
-  if (s->recv_trailing_md_op) {  // Use on_complete here
+  if (s->recv_trailing_md_op) {
     INPROC_LOG(GPR_DEBUG,
                "fail_helper %p scheduling trailing-md-on-complete %p", s,
                error);
@@ -531,7 +532,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
   // and then return to read_closure_needed state if still needed
 
   // Since this is a closure directly invoked by the combiner, it should not
-  // unref the error explicitly. That will be done implicitly by the combiner
+  // unref the error parameter explicitly; the combiner will do that implicitly
   grpc_error *new_err = GRPC_ERROR_NONE;
 
   INPROC_LOG(GPR_DEBUG, "read_state_machine %p", arg);
@@ -559,7 +560,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
                  "read_state_machine %p scheduling on_complete errors for no "
                  "initial md %p",
                  s, new_err);
-      fail_helper_locked(exec_ctx, s, new_err);
+      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
       goto done;
     } else if (s->initial_md_recvd) {
       new_err =
@@ -569,7 +570,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
           "read_state_machine %p scheduling on_complete errors for already "
           "recvd initial md %p",
           s, new_err);
-      fail_helper_locked(exec_ctx, s, new_err);
+      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
       goto done;
     }
 
@@ -730,8 +731,8 @@ done:
 
 static grpc_closure do_nothing_closure;
 
-static bool cancel_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
-                          grpc_error *error) {
+static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
+                                 grpc_error *error) {
   bool ret = false;  // was the cancel accepted
   INPROC_LOG(GPR_DEBUG, "cancel_stream %p with %s", s,
              grpc_error_string(error));
@@ -812,7 +813,9 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   }
 
   if (op->cancel_stream) {
-    cancel_stream(exec_ctx, s, op->payload->cancel_stream.cancel_error);
+    // Call cancel_stream_locked without ref'ing the cancel_error because
+    // this function is responsible to make sure that that field gets unref'ed
+    cancel_stream_locked(exec_ctx, s, op->payload->cancel_stream.cancel_error);
     // this op can complete without an error
   } else if (s->cancel_self_error != GRPC_ERROR_NONE) {
     // already self-canceled so still give it an error
@@ -980,7 +983,7 @@ static void close_transport_locked(grpc_exec_ctx *exec_ctx,
     inproc_stream *s;
     while ((s = t->stream_list) != NULL) {
       t->stream_list = s->stream_list_next;
-      cancel_stream(
+      cancel_stream_locked(
           exec_ctx, s,
           grpc_error_set_int(
               GRPC_ERROR_CREATE_FROM_STATIC_STRING("Transport closed"),
