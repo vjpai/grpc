@@ -156,7 +156,9 @@ typedef struct inproc_stream {
   grpc_error *write_buffer_cancel_error;
 
   struct inproc_stream *other_side;
-  gpr_refcount refs;
+  bool other_side_closed; // won't talk anymore
+  bool write_buffer_other_side_closed; // on hold
+  grpc_stream_refcount *refs;
   grpc_closure *closure_at_destroy;
 
   gpr_arena *arena;
@@ -172,11 +174,14 @@ typedef struct inproc_stream {
   bool initial_md_recvd;
   bool trailing_md_recvd;
 
+  bool closed;
+
   grpc_error *cancel_self_error;
   grpc_error *cancel_other_error;
 
   gpr_timespec deadline;
 
+  bool listed;
   struct inproc_stream *stream_list_prev;
   struct inproc_stream *stream_list_next;
 } inproc_stream;
@@ -234,15 +239,26 @@ static void unref_transport(grpc_exec_ctx *exec_ctx, inproc_transport *t) {
   }
 }
 
-static void ref_stream(inproc_stream *s) {
-  INPROC_LOG(GPR_DEBUG, "ref_stream %p", s);
-  gpr_ref(&s->refs);
+#ifndef NDEBUG
+#define STREAM_REF(refs, reason) grpc_stream_ref(refs, reason)
+#define STREAM_UNREF(e, refs, reason) grpc_stream_unref(e, refs, reason)
+#else
+#define STREAM_REF(refs, reason) grpc_stream_ref(refs)
+#define STREAM_UNREF(e, refs, reason) grpc_stream_unref(e, refs)
+#endif
+
+static void ref_stream(inproc_stream *s, const char *reason) {
+  INPROC_LOG(GPR_DEBUG, "ref_stream %p %s", s, reason);
+  STREAM_REF(s->refs, reason);
+}
+
+static void unref_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s, const char *reason) {
+  INPROC_LOG(GPR_DEBUG, "unref_stream %p %s", s, reason);
+  STREAM_UNREF(exec_ctx, s->refs, reason);
 }
 
 static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   INPROC_LOG(GPR_DEBUG, "really_destroy_stream %p", s);
-  // Remove the stream contents and remove from the transport's linked list
-  gpr_mu_lock(&s->t->mu->mu);
 
   grpc_metadata_batch_destroy(exec_ctx, &s->to_read_initial_md);
   slice_buffer_list_destroy(exec_ctx, &s->to_read_message);
@@ -254,18 +270,6 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   GRPC_ERROR_UNREF(s->cancel_self_error);
   GRPC_ERROR_UNREF(s->cancel_other_error);
 
-  inproc_stream *p = s->stream_list_prev;
-  inproc_stream *n = s->stream_list_next;
-  if (p != NULL) {
-    p->stream_list_next = n;
-  } else {
-    s->t->stream_list = n;
-  }
-  if (n != NULL) {
-    n->stream_list_prev = p;
-  }
-  gpr_mu_unlock(&s->t->mu->mu);
-
   unref_transport(exec_ctx, s->t);
 
   if (s->closure_at_destroy) {
@@ -273,12 +277,6 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   }
 }
 
-static void unref_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
-  INPROC_LOG(GPR_DEBUG, "unref_stream %p", s);
-  if (gpr_unref(&s->refs)) {
-    really_destroy_stream(exec_ctx, s);
-  }
-}
 
 static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
                                grpc_error *error);
@@ -326,7 +324,11 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   inproc_transport *t = (inproc_transport *)gt;
   inproc_stream *s = (inproc_stream *)gs;
   s->arena = arena;
-  gpr_ref_init(&s->refs, 1);  // don't count the transport stream list
+
+  s->refs = refcount;
+  // Ref this stream right now
+  ref_stream(s, "inproc_init_stream:init");
+
   grpc_metadata_batch_init(&s->to_read_initial_md);
   s->to_read_initial_md_flags = 0;
   s->to_read_initial_md_filled = false;
@@ -344,9 +346,12 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                     grpc_schedule_on_exec_ctx);
   s->t = t;
   s->closure_at_destroy = NULL;
+  s->other_side_closed = false;
 
   s->initial_md_sent = s->trailing_md_sent = s->initial_md_recvd =
       s->trailing_md_recvd = false;
+
+  s->closed = false;
 
   s->cancel_self_error = GRPC_ERROR_NONE;
   s->cancel_other_error = GRPC_ERROR_NONE;
@@ -356,6 +361,8 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
 
   s->stream_list_prev = NULL;
   gpr_mu_lock(&t->mu->mu);
+  s->listed = true;
+  ref_stream(s, "inproc_init_stream:list");
   s->stream_list_next = t->stream_list;
   if (t->stream_list) {
     t->stream_list->stream_list_prev = s;
@@ -369,7 +376,7 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     ref_transport(st);
     s->other_side = NULL;  // will get filled in soon
     // Pass the client-side stream address to the server-side for a ref
-    ref_stream(s);  // ref it now on behalf of server side to avoid destruction
+    ref_stream(s, "inproc_init_stream:clt");  // ref it now on behalf of server side to avoid destruction
     INPROC_LOG(GPR_DEBUG, "calling accept stream cb %p %p",
                st->accept_stream_cb, st->accept_stream_data);
     (*st->accept_stream_cb)(exec_ctx, st->accept_stream_data, &st->base,
@@ -379,7 +386,7 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     inproc_stream *cs = (inproc_stream *)server_data;
     s->other_side = cs;
     // Ref the server-side stream on behalf of the client now
-    ref_stream(s);
+    ref_stream(s, "inproc_init_stream:srv");
 
     // Now we are about to affect the other side, so lock the transport
     // to make sure that it doesn't get destroyed
@@ -416,6 +423,38 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     gpr_mu_unlock(&s->t->mu->mu);
   }
   return 0;  // return value is not important
+}
+
+static void close_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
+  if (!s->closed) {
+    if (s->listed) {
+      inproc_stream *p = s->stream_list_prev;
+      inproc_stream *n = s->stream_list_next;
+      if (p != NULL) {
+	p->stream_list_next = n;
+      } else {
+	s->t->stream_list = n;
+      }
+      if (n != NULL) {
+	n->stream_list_prev = p;
+      }
+      s->listed = false;
+      unref_stream(exec_ctx, s, "close_stream:list");
+    }
+    s->closed = true;
+    unref_stream(exec_ctx, s, "close_stream:closing");
+  }
+}
+
+// This function means that we are done talking to the other side
+static void close_other_side_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s, const char *reason) {
+  if (s->other_side != NULL) {
+    unref_stream(exec_ctx, s->other_side, reason);
+    s->other_side_closed = true;
+    s->other_side = NULL;
+  } else if (!s->other_side_closed) {
+    s->write_buffer_other_side_closed = true;
+  }
 }
 
 static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
@@ -521,6 +560,9 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                        GRPC_ERROR_REF(error));
     s->recv_trailing_md_op = NULL;
   }
+  close_other_side_locked(exec_ctx, s, "fail_helper:other_side");
+  close_stream_locked(exec_ctx, s);
+
   GRPC_ERROR_UNREF(error);
 }
 
@@ -534,6 +576,8 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
   // Since this is a closure directly invoked by the combiner, it should not
   // unref the error parameter explicitly; the combiner will do that implicitly
   grpc_error *new_err = GRPC_ERROR_NONE;
+
+  bool needs_close = false;
 
   INPROC_LOG(GPR_DEBUG, "read_state_machine %p", arg);
   inproc_stream *s = (inproc_stream *)arg;
@@ -688,6 +732,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                            GRPC_ERROR_REF(new_err));
         s->recv_trailing_md_op = NULL;
+	needs_close = true;
       } else {
         INPROC_LOG(GPR_DEBUG,
                    "read_state_machine %p server needs to delay handling "
@@ -725,6 +770,10 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     s->read_closure_needed = true;
   }
 done:
+  if (needs_close) {
+    close_other_side_locked(exec_ctx, s, "read_closure");
+    close_stream_locked(exec_ctx, s);
+  }
   gpr_mu_unlock(&s->t->mu->mu);
   GRPC_ERROR_UNREF(new_err);
 }
@@ -777,13 +826,16 @@ static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     // md, now's the chance
     if (!s->t->is_client && s->trailing_md_recvd && s->recv_trailing_md_op) {
       INPROC_LOG(GPR_DEBUG,
-                 "perform_stream_op %p scheduling trailing-md-on-complete %p",
+                 "cancel_stream %p scheduling trailing-md-on-complete %p",
                  s, s->cancel_self_error);
       GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                          GRPC_ERROR_REF(s->cancel_self_error));
       s->recv_trailing_md_op = NULL;
     }
   }
+
+  close_other_side_locked(exec_ctx, s, "cancel_stream:other_side");
+  close_stream_locked(exec_ctx, s);
 
   GRPC_ERROR_UNREF(error);
   return ret;
@@ -829,6 +881,8 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                op->recv_message ? " recv_message" : "",
                op->recv_trailing_metadata ? " recv_trailing_metadata" : "");
   }
+
+  bool needs_close = false;
 
   if (error == GRPC_ERROR_NONE &&
       (op->send_initial_metadata || op->send_message ||
@@ -894,6 +948,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
             op->payload->send_trailing_metadata.send_trailing_metadata, 0, dest,
             NULL, destfilled);
         s->trailing_md_sent = true;
+	close_other_side_locked(exec_ctx, s, "cancel_stream:other_side");
         if (!s->t->is_client && s->trailing_md_recvd &&
             s->recv_trailing_md_op) {
           INPROC_LOG(GPR_DEBUG,
@@ -902,6 +957,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
           GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                              GRPC_ERROR_NONE);
           s->recv_trailing_md_op = NULL;
+	  needs_close = true;
         }
       }
     }
@@ -966,6 +1022,9 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
                error);
     GRPC_CLOSURE_SCHED(exec_ctx, on_complete, GRPC_ERROR_REF(error));
   }
+  if (needs_close) {
+    close_stream_locked(exec_ctx, s);
+  }
   gpr_mu_unlock(&s->t->mu->mu);
   GRPC_ERROR_UNREF(error);
 }
@@ -980,11 +1039,10 @@ static void close_transport_locked(grpc_exec_ctx *exec_ctx,
   if (!t->is_closed) {
     t->is_closed = true;
     /* Also end all streams on this transport */
-    inproc_stream *s;
-    while ((s = t->stream_list) != NULL) {
-      t->stream_list = s->stream_list_next;
+    while (t->stream_list != NULL) {
+      // cancel_stream_locked also adjusts stream list
       cancel_stream_locked(
-          exec_ctx, s,
+          exec_ctx, t->stream_list,
           grpc_error_set_int(
               GRPC_ERROR_CREATE_FROM_STATIC_STRING("Transport closed"),
               GRPC_ERROR_INT_GRPC_STATUS, GRPC_STATUS_UNAVAILABLE));
@@ -1032,8 +1090,7 @@ static void destroy_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   INPROC_LOG(GPR_DEBUG, "destroy_stream %p %p", gs, then_schedule_closure);
   inproc_stream *s = (inproc_stream *)gs;
   s->closure_at_destroy = then_schedule_closure;
-  unref_stream(exec_ctx, s);
-  unref_stream(exec_ctx, s->other_side);
+  really_destroy_stream(exec_ctx, s);
 }
 
 static void destroy_transport(grpc_exec_ctx *exec_ctx, grpc_transport *gt) {
