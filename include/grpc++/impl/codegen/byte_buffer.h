@@ -96,6 +96,32 @@ class ByteBuffer final {
   /// Is this ByteBuffer valid?
   bool Valid() const { return (buffer_ != nullptr); }
 
+  class ByteBufferReader : public std::iterator<std::input_iterator_tag, Slice> {
+    ~ByteBufferReader();
+
+    bool operator==(const ByteBufferReader& other) {return !(*this != other); }
+    bool operator!=(const ByteBufferReader& other);
+
+    Slice operator*();
+
+    ByteBufferReader& operator++();
+    ByteBufferReader operator++(int) {auto b = *this; ++(*this); return b;}
+   private:
+    grpc_byte_buffer_reader reader_;
+    bool active_;
+    bool valid_;
+
+    friend class ByteBuffer;
+    ByteBufferReader();
+    ByteBufferReader(grpc_byte_buffer* buf);
+  };
+
+  void Append(const Slice& slice) {Append(slice, Slice::ADD_REF);}
+  void Append(const Slice& slice, Slice::AddRef);
+  void Append(const Slice& slice, Slice::StealRef);
+
+  ByteBufferReader begin();
+  ByteBufferReader end();
  private:
   friend class SerializationTraits<ByteBuffer, void>;
   friend class internal::CallOpSendMessage;

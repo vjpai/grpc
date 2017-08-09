@@ -20,12 +20,5 @@
 #define GRPCXX_SUPPORT_BYTE_BUFFER_H
 
 #include <grpc++/impl/codegen/byte_buffer.h>
-#include <grpc++/impl/serialization_traits.h>
-#include <grpc++/support/config.h>
-#include <grpc++/support/slice.h>
-#include <grpc++/support/status.h>
-#include <grpc/byte_buffer.h>
-#include <grpc/grpc.h>
-#include <grpc/support/log.h>
 
 #endif  // GRPCXX_SUPPORT_BYTE_BUFFER_H

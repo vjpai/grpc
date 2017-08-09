@@ -71,6 +71,21 @@ GRPCAPI void grpc_byte_buffer_reader_destroy(grpc_byte_buffer_reader* reader);
 GRPCAPI int grpc_byte_buffer_reader_next(grpc_byte_buffer_reader* reader,
                                          grpc_slice* slice);
 
+/** Updates \a slice with the next piece of data from from \a reader and returns
+ * 1. Does not advance slice index. Returns 0 if no slice available. Caller is
+ * responsible for calling grpc_slice_unref on the result. */
+GRPCAPI int grpc_byte_buffer_reader_deref(grpc_byte_buffer_reader *reader,
+					  grpc_slice *slice);
+
+/** Advance byte buffer reader by n slice indices. Returns 1 if possible. Returns 0 
+ * if already at end of buffer */
+GRPCAPI int grpc_byte_buffer_reader_advance(grpc_byte_buffer_reader *reader, unsigned n)
+
+/** Compare two byte buffer readers for equality. This means that they point to the
+ * same underlying byte buffer and have the same index. Useful for checking end. */
+GRPCAPI int grpc_byte_buffer_reader_equal(grpc_byte_buffer_reader *reader1,
+					  grpc_byte_buffer_reader *reader2);
+
 /** Merge all data from \a reader into single slice */
 GRPCAPI grpc_slice
 grpc_byte_buffer_reader_readall(grpc_byte_buffer_reader* reader);

@@ -103,7 +103,59 @@ int grpc_byte_buffer_reader_next(grpc_byte_buffer_reader* reader,
   return 0;
 }
 
-grpc_slice grpc_byte_buffer_reader_readall(grpc_byte_buffer_reader* reader) {
+int grpc_byte_buffer_reader_deref(grpc_byte_buffer_reader *reader,
+				  grpc_slice *slice) {
+  switch (reader->buffer_in->type) {
+    case GRPC_BB_RAW: {
+      grpc_slice_buffer *slice_buffer;
+      slice_buffer = &reader->buffer_out->data.raw.slice_buffer;
+      if (reader->current.index < slice_buffer->count) {
+        *slice = grpc_slice_ref_internal(
+            slice_buffer->slices[reader->current.index]);
+        return 1;
+      }
+      break;
+    }
+  }
+  return 0;
+}
+
+int grpc_byte_buffer_reader_advance(grpc_byte_buffer_reader *reader, int n) {
+  switch (reader->buffer_in->type) {
+    case GRPC_BB_RAW: {
+      grpc_slice_buffer *slice_buffer;
+      slice_buffer = &reader->buffer_out->data.raw.slice_buffer;
+      if (reader->current.index + n <= slice_buffer->count) {
+        reader->current.index += n;
+        return 1;
+      }
+      break;
+    }
+  }
+  return 0;
+}
+
+int grpc_byte_buffer_reader_equal(grpc_byte_buffer_reader *reader1,
+				  grpc_byte_buffer_reader *reader2) {
+  if (reader1->buffer_in->type != reader2->buffer_in->type) {
+    return 0;
+  }
+  if (reader1->current.index != reader->current.index) {
+    return 0;
+  }
+  switch (reader1->buffer_in->type) {
+    case GRPC_BB_RAW: {
+      grpc_slice_buffer *slice_buffer1;
+      slice_buffer1 = &reader1->buffer_out->data.raw.slice_buffer;
+      grpc_slice_buffer *slice_buffer2;
+      slice_buffer2 = &reader2->buffer_out->data.raw.slice_buffer;
+    }
+    break;
+  }
+  return 0;
+}
+
+grpc_slice grpc_byte_buffer_reader_readall(grpc_byte_buffer_reader *reader) {
   grpc_slice in_slice;
   size_t bytes_read = 0;
   const size_t input_size = grpc_byte_buffer_length(reader->buffer_out);

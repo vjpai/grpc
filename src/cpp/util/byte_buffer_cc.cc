@@ -96,4 +96,51 @@ void ByteBuffer::Swap(ByteBuffer* other) {
   buffer_ = tmp;
 }
 
+ByteBuffer::ByteBufferReader::ByteBufferReader(grpc_byte_buffer* buf) {
+  active_ = grpc_byte_buffer_reader_init(&reader, buf);
+  valid_ = active_;
+}
+  
+ByteBuffer::ByteBufferReader::ByteBufferReader() {
+  active_ = valid_ = false;
+}
+  
+ByteBuffer::ByteBufferReader::~ByteBufferReader() {
+  if (active_) {
+    grpc_byte_buffer_reader_destroy(&reader_);
+  }
+}
+
+ByteBuffer::ByteBufferReader ByteBuffer::begin() {
+  if (buffer_) {
+    return ByteBuffer::ByteBufferReader(buffer_);
+  } else {
+    return ByteBuffer::ByteBufferReader();
+  }
+}
+
+ByteBuffer::ByteBufferReader ByteBuffer::end() {
+  return ByteBuffer::ByteBufferReader();
+}
+
+bool ByteBuffer::ByteBufferReader::operator !=(const ByteBuffer::ByteBufferReader& other) {
+  // Equality implies that the both iterators are equally active and valid
+  // and that if both are active and valid, the underlying readers point to the same
+  // byte buffer and have the same index
+}
+
+ByteBuffer::ByteBufferReader& operator++() {
+  
+}
+  
+Slice operator*() {
+  grpc_slice s;
+  if (grpc_byte_buffer_reader_deref(&reader, &s)) {
+    return Slice(s, Slice::STEAL_REF);
+  } else {
+    return Slice();
+  }
+}
+
+
 }  // namespace grpc
