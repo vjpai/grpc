@@ -32,12 +32,15 @@ namespace grpc {
 class CompletionQueue;
 extern CoreCodegenInterface* g_core_codegen_interface;
 
-/// An interface relevant for async client side unary RPCS (which send
+/// An interface relevant for async client side unary RPCs (which send
 /// one request message to a server and receive one response message).
 template <class R>
 class ClientAsyncResponseReaderInterface {
  public:
   virtual ~ClientAsyncResponseReaderInterface() {}
+
+  /// Start the call that was set up by the constructor
+  virtual void StartCall() = 0;
 
   /// Request notification of the reading of initial metadata. Completion
   /// will be notified by \a tag on the associated completion queue.
@@ -80,11 +83,11 @@ class ClientAsyncResponseReader final
                                            CompletionQueue* cq,
                                            const RpcMethod& method,
                                            ClientContext* context,
-                                           const W& request) {
+                                           const W& request, bool start) {
     Call call = channel->CreateCall(method, context, cq);
     return new (g_core_codegen_interface->grpc_call_arena_alloc(
         call.call(), sizeof(ClientAsyncResponseReader)))
-        ClientAsyncResponseReader(call, context, request);
+        ClientAsyncResponseReader(call, context, request, start);
   }
 
   // always allocated against a call arena, no memory free required
@@ -92,13 +95,15 @@ class ClientAsyncResponseReader final
     assert(size == sizeof(ClientAsyncResponseReader));
   }
 
+  void StartCall() override { call_.PerformOps(&init_buf); }
+
   /// See \a ClientAsyncResponseReaderInterface::ReadInitialMetadata for
   /// semantics.
   ///
   /// Side effect:
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata sent from the server.
-  void ReadInitialMetadata(void* tag) {
+  void ReadInitialMetadata(void* tag) override {
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
     meta_buf.set_output_tag(tag);
@@ -111,7 +116,7 @@ class ClientAsyncResponseReader final
   /// Side effect:
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata sent from the server.
-  void Finish(R* msg, Status* status, void* tag) {
+  void Finish(R* msg, Status* status, void* tag) override {
     finish_buf.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       finish_buf.RecvInitialMetadata(context_);
@@ -127,14 +132,15 @@ class ClientAsyncResponseReader final
   Call call_;
 
   template <class W>
-  ClientAsyncResponseReader(Call call, ClientContext* context, const W& request)
+  ClientAsyncResponseReader(Call call, ClientContext* context, const W& request,
+                            bool start)
       : context_(context), call_(call) {
     init_buf.SendInitialMetadata(context->send_initial_metadata_,
                                  context->initial_metadata_flags());
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(init_buf.SendMessage(request).ok());
     init_buf.ClientSendClose();
-    call_.PerformOps(&init_buf);
+    if (start) StartCall();
   }
 
   // disable operator new

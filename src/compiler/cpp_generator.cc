@@ -171,19 +171,24 @@ void PrintHeaderClientMethodInterfaces(
           *vars,
           "virtual ::grpc::Status $Method$(::grpc::ClientContext* context, "
           "const $Request$& request, $Response$* response) = 0;\n");
-      printer->Print(*vars,
-                     "std::unique_ptr< "
-                     "::grpc::ClientAsyncResponseReaderInterface< $Response$>> "
-                     "Async$Method$(::grpc::ClientContext* context, "
-                     "const $Request$& request, "
-                     "::grpc::CompletionQueue* cq) {\n");
-      printer->Indent();
-      printer->Print(*vars,
-                     "return std::unique_ptr< "
-                     "::grpc::ClientAsyncResponseReaderInterface< $Response$>>("
-                     "Async$Method$Raw(context, request, cq));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< "
+            "::grpc::ClientAsyncResponseReaderInterface< $Response$>> "
+            "$AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+            "const $Request$& request, "
+            "::grpc::CompletionQueue* cq) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< "
+            "::grpc::ClientAsyncResponseReaderInterface< $Response$>>("
+            "$AsyncPrefix$$Method$Raw(context, request, cq));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (ClientOnlyStreaming(method)) {
       printer->Print(
           *vars,
@@ -197,19 +202,24 @@ void PrintHeaderClientMethodInterfaces(
           "($Method$Raw(context, response));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(
-          *vars,
-          "std::unique_ptr< ::grpc::ClientAsyncWriterInterface< $Request$>>"
-          " Async$Method$(::grpc::ClientContext* context, $Response$* "
-          "response, "
-          "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(*vars,
-                     "return std::unique_ptr< "
-                     "::grpc::ClientAsyncWriterInterface< $Request$>>("
-                     "Async$Method$Raw(context, response, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< ::grpc::ClientAsyncWriterInterface< $Request$>>"
+            " $AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+            "$Response$* "
+            "response, "
+            "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< "
+            "::grpc::ClientAsyncWriterInterface< $Request$>>("
+            "$AsyncPrefix$$Method$Raw(context, response, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (ServerOnlyStreaming(method)) {
       printer->Print(
           *vars,
@@ -223,19 +233,23 @@ void PrintHeaderClientMethodInterfaces(
           "($Method$Raw(context, request));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(
-          *vars,
-          "std::unique_ptr< ::grpc::ClientAsyncReaderInterface< $Response$>> "
-          "Async$Method$("
-          "::grpc::ClientContext* context, const $Request$& request, "
-          "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(*vars,
-                     "return std::unique_ptr< "
-                     "::grpc::ClientAsyncReaderInterface< $Response$>>("
-                     "Async$Method$Raw(context, request, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< ::grpc::ClientAsyncReaderInterface< $Response$>> "
+            "$AsyncPrefix$$Method$("
+            "::grpc::ClientContext* context, const $Request$& request, "
+            "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< "
+            "::grpc::ClientAsyncReaderInterface< $Response$>>("
+            "$AsyncPrefix$$Method$Raw(context, request, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (method->BidiStreaming()) {
       printer->Print(*vars,
                      "std::unique_ptr< ::grpc::ClientReaderWriterInterface< "
@@ -249,61 +263,78 @@ void PrintHeaderClientMethodInterfaces(
           "$Method$Raw(context));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(
-          *vars,
-          "std::unique_ptr< "
-          "::grpc::ClientAsyncReaderWriterInterface< $Request$, $Response$>> "
-          "Async$Method$(::grpc::ClientContext* context, "
-          "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(
-          *vars,
-          "return std::unique_ptr< "
-          "::grpc::ClientAsyncReaderWriterInterface< $Request$, $Response$>>("
-          "Async$Method$Raw(context, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< "
+            "::grpc::ClientAsyncReaderWriterInterface< $Request$, $Response$>> "
+            "$AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+            "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< "
+            "::grpc::ClientAsyncReaderWriterInterface< $Request$, $Response$>>("
+            "$AsyncPrefix$$Method$Raw(context, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     }
   } else {
     if (method->NoStreaming()) {
-      printer->Print(
-          *vars,
-          "virtual ::grpc::ClientAsyncResponseReaderInterface< $Response$>* "
-          "Async$Method$Raw(::grpc::ClientContext* context, "
-          "const $Request$& request, "
-          "::grpc::CompletionQueue* cq) = 0;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "virtual ::grpc::ClientAsyncResponseReaderInterface< $Response$>* "
+            "$AsyncPrefix$$Method$Raw(::grpc::ClientContext* context, "
+            "const $Request$& request, "
+            "::grpc::CompletionQueue* cq) = 0;\n");
+      }
     } else if (ClientOnlyStreaming(method)) {
       printer->Print(
           *vars,
           "virtual ::grpc::ClientWriterInterface< $Request$>*"
           " $Method$Raw("
           "::grpc::ClientContext* context, $Response$* response) = 0;\n");
-      printer->Print(*vars,
-                     "virtual ::grpc::ClientAsyncWriterInterface< $Request$>*"
-                     " Async$Method$Raw(::grpc::ClientContext* context, "
-                     "$Response$* response, "
-                     "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "virtual ::grpc::ClientAsyncWriterInterface< $Request$>*"
+            " $AsyncPrefix$$Method$Raw(::grpc::ClientContext* context, "
+            "$Response$* response, "
+            "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      }
     } else if (ServerOnlyStreaming(method)) {
       printer->Print(
           *vars,
           "virtual ::grpc::ClientReaderInterface< $Response$>* $Method$Raw("
           "::grpc::ClientContext* context, const $Request$& request) = 0;\n");
-      printer->Print(
-          *vars,
-          "virtual ::grpc::ClientAsyncReaderInterface< $Response$>* "
-          "Async$Method$Raw("
-          "::grpc::ClientContext* context, const $Request$& request, "
-          "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "virtual ::grpc::ClientAsyncReaderInterface< $Response$>* "
+            "$AsyncPrefix$$Method$Raw("
+            "::grpc::ClientContext* context, const $Request$& request, "
+            "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      }
     } else if (method->BidiStreaming()) {
       printer->Print(*vars,
                      "virtual ::grpc::ClientReaderWriterInterface< $Request$, "
                      "$Response$>* "
                      "$Method$Raw(::grpc::ClientContext* context) = 0;\n");
-      printer->Print(*vars,
-                     "virtual ::grpc::ClientAsyncReaderWriterInterface< "
-                     "$Request$, $Response$>* "
-                     "Async$Method$Raw(::grpc::ClientContext* context, "
-                     "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "virtual ::grpc::ClientAsyncReaderWriterInterface< "
+            "$Request$, $Response$>* "
+            "$AsyncPrefix$$Method$Raw(::grpc::ClientContext* context, "
+            "::grpc::CompletionQueue* cq, void* tag) = 0;\n");
+      }
     }
   }
 }
@@ -321,19 +352,22 @@ void PrintHeaderClientMethod(grpc_generator::Printer *printer,
           *vars,
           "::grpc::Status $Method$(::grpc::ClientContext* context, "
           "const $Request$& request, $Response$* response) override;\n");
-      printer->Print(
-          *vars,
-          "std::unique_ptr< ::grpc::ClientAsyncResponseReader< $Response$>> "
-          "Async$Method$(::grpc::ClientContext* context, "
-          "const $Request$& request, "
-          "::grpc::CompletionQueue* cq) {\n");
-      printer->Indent();
-      printer->Print(*vars,
-                     "return std::unique_ptr< "
-                     "::grpc::ClientAsyncResponseReader< $Response$>>("
-                     "Async$Method$Raw(context, request, cq));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< ::grpc::ClientAsyncResponseReader< $Response$>> "
+            "$AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+            "const $Request$& request, "
+            "::grpc::CompletionQueue* cq) {\n");
+        printer->Indent();
+        printer->Print(*vars,
+                       "return std::unique_ptr< "
+                       "::grpc::ClientAsyncResponseReader< $Response$>>("
+                       "$AsyncPrefix$$Method$Raw(context, request, cq));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (ClientOnlyStreaming(method)) {
       printer->Print(
           *vars,
@@ -346,18 +380,21 @@ void PrintHeaderClientMethod(grpc_generator::Printer *printer,
                      "($Method$Raw(context, response));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(*vars,
-                     "std::unique_ptr< ::grpc::ClientAsyncWriter< $Request$>>"
-                     " Async$Method$(::grpc::ClientContext* context, "
-                     "$Response$* response, "
-                     "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(
-          *vars,
-          "return std::unique_ptr< ::grpc::ClientAsyncWriter< $Request$>>("
-          "Async$Method$Raw(context, response, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(*vars,
+                       "std::unique_ptr< ::grpc::ClientAsyncWriter< $Request$>>"
+                       " $AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+                       "$Response$* response, "
+                       "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< ::grpc::ClientAsyncWriter< $Request$>>("
+            "$AsyncPrefix$$Method$Raw(context, response, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (ServerOnlyStreaming(method)) {
       printer->Print(
           *vars,
@@ -371,19 +408,22 @@ void PrintHeaderClientMethod(grpc_generator::Printer *printer,
           "($Method$Raw(context, request));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(
-          *vars,
-          "std::unique_ptr< ::grpc::ClientAsyncReader< $Response$>> "
-          "Async$Method$("
-          "::grpc::ClientContext* context, const $Request$& request, "
-          "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(
-          *vars,
-          "return std::unique_ptr< ::grpc::ClientAsyncReader< $Response$>>("
-          "Async$Method$Raw(context, request, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "std::unique_ptr< ::grpc::ClientAsyncReader< $Response$>> "
+            "$AsyncPrefix$$Method$("
+            "::grpc::ClientContext* context, const $Request$& request, "
+            "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< ::grpc::ClientAsyncReader< $Response$>>("
+            "$AsyncPrefix$$Method$Raw(context, request, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     } else if (method->BidiStreaming()) {
       printer->Print(
           *vars,
@@ -396,53 +436,72 @@ void PrintHeaderClientMethod(grpc_generator::Printer *printer,
                      "$Method$Raw(context));\n");
       printer->Outdent();
       printer->Print("}\n");
-      printer->Print(*vars,
-                     "std::unique_ptr<  ::grpc::ClientAsyncReaderWriter< "
-                     "$Request$, $Response$>> "
-                     "Async$Method$(::grpc::ClientContext* context, "
-                     "::grpc::CompletionQueue* cq, void* tag) {\n");
-      printer->Indent();
-      printer->Print(*vars,
-                     "return std::unique_ptr< "
-                     "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>>("
-                     "Async$Method$Raw(context, cq, tag));\n");
-      printer->Outdent();
-      printer->Print("}\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(*vars,
+                       "std::unique_ptr<  ::grpc::ClientAsyncReaderWriter< "
+                       "$Request$, $Response$>> "
+                       "$AsyncPrefix$$Method$(::grpc::ClientContext* context, "
+                       "::grpc::CompletionQueue* cq, void* tag) {\n");
+        printer->Indent();
+        printer->Print(
+            *vars,
+            "return std::unique_ptr< "
+            "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>>("
+            "$AsyncPrefix$$Method$Raw(context, cq, tag));\n");
+        printer->Outdent();
+        printer->Print("}\n");
+      }
     }
   } else {
     if (method->NoStreaming()) {
-      printer->Print(*vars,
-                     "::grpc::ClientAsyncResponseReader< $Response$>* "
-                     "Async$Method$Raw(::grpc::ClientContext* context, "
-                     "const $Request$& request, "
-                     "::grpc::CompletionQueue* cq) override;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "::grpc::ClientAsyncResponseReader< $Response$>* "
+            "$AsyncPrefix$$Method$Raw(::grpc::ClientContext* context, "
+            "const $Request$& request, "
+            "::grpc::CompletionQueue* cq) override;\n");
+      }
     } else if (ClientOnlyStreaming(method)) {
       printer->Print(*vars,
                      "::grpc::ClientWriter< $Request$>* $Method$Raw("
                      "::grpc::ClientContext* context, $Response$* response) "
                      "override;\n");
-      printer->Print(*vars,
-                     "::grpc::ClientAsyncWriter< $Request$>* Async$Method$Raw("
-                     "::grpc::ClientContext* context, $Response$* response, "
-                     "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "::grpc::ClientAsyncWriter< $Request$>* $AsyncPrefix$$Method$Raw("
+            "::grpc::ClientContext* context, $Response$* response, "
+            "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      }
     } else if (ServerOnlyStreaming(method)) {
       printer->Print(*vars,
                      "::grpc::ClientReader< $Response$>* $Method$Raw("
                      "::grpc::ClientContext* context, const $Request$& request)"
                      " override;\n");
-      printer->Print(
-          *vars,
-          "::grpc::ClientAsyncReader< $Response$>* Async$Method$Raw("
-          "::grpc::ClientContext* context, const $Request$& request, "
-          "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "::grpc::ClientAsyncReader< $Response$>* $AsyncPrefix$$Method$Raw("
+            "::grpc::ClientContext* context, const $Request$& request, "
+            "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      }
     } else if (method->BidiStreaming()) {
       printer->Print(*vars,
                      "::grpc::ClientReaderWriter< $Request$, $Response$>* "
                      "$Method$Raw(::grpc::ClientContext* context) override;\n");
-      printer->Print(*vars,
-                     "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>* "
-                     "Async$Method$Raw(::grpc::ClientContext* context, "
-                     "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      for (auto async_prefix : {"Async", "PrepareAsync"}) {
+        (*vars)["AsyncPrefix"] = async_prefix;
+        printer->Print(
+            *vars,
+            "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>* "
+            "$AsyncPrefix$$Method$Raw(::grpc::ClientContext* context, "
+            "::grpc::CompletionQueue* cq, void* tag) override;\n");
+      }
     }
   }
 }
@@ -1077,6 +1136,10 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
   (*vars)["Method"] = method->name();
   (*vars)["Request"] = method->input_type_name();
   (*vars)["Response"] = method->output_type_name();
+  struct {
+    grpc::string prefix;
+    grpc::string start;  // bool literal expressed as string
+  } async_prefixes[] = {{"Async", "true"}, {"PrepareAsync", "false"}};
   if (method->NoStreaming()) {
     printer->Print(*vars,
                    "::grpc::Status $ns$$Service$::Stub::$Method$("
@@ -1087,19 +1150,23 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                    "rpcmethod_$Method$_, "
                    "context, request, response);\n"
                    "}\n\n");
-    printer->Print(
-        *vars,
-        "::grpc::ClientAsyncResponseReader< $Response$>* "
-        "$ns$$Service$::Stub::Async$Method$Raw(::grpc::ClientContext* context, "
-        "const $Request$& request, "
-        "::grpc::CompletionQueue* cq) {\n");
-    printer->Print(*vars,
-                   "  return "
-                   "::grpc::ClientAsyncResponseReader< $Response$>::Create("
-                   "channel_.get(), cq, "
-                   "rpcmethod_$Method$_, "
-                   "context, request);\n"
-                   "}\n\n");
+    for (auto async_prefix : async_prefixes) {
+      (*vars)["AsyncPrefix"] = async_prefix.prefix;
+      (*vars)["AsyncStart"] = async_prefix.start;
+      printer->Print(*vars,
+                     "::grpc::ClientAsyncResponseReader< $Response$>* "
+                     "$ns$$Service$::Stub::$AsyncPrefix$$Method$Raw(::grpc::"
+                     "ClientContext* context, "
+                     "const $Request$& request, "
+                     "::grpc::CompletionQueue* cq) {\n");
+      printer->Print(*vars,
+                     "  return "
+                     "::grpc::ClientAsyncResponseReader< $Response$>::Create("
+                     "channel_.get(), cq, "
+                     "rpcmethod_$Method$_, "
+                     "context, request, $AsyncStart$);\n"
+                     "}\n\n");
+    }
   } else if (ClientOnlyStreaming(method)) {
     printer->Print(*vars,
                    "::grpc::ClientWriter< $Request$>* "
@@ -1111,17 +1178,21 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                    "rpcmethod_$Method$_, "
                    "context, response);\n"
                    "}\n\n");
-    printer->Print(*vars,
-                   "::grpc::ClientAsyncWriter< $Request$>* "
-                   "$ns$$Service$::Stub::Async$Method$Raw("
-                   "::grpc::ClientContext* context, $Response$* response, "
-                   "::grpc::CompletionQueue* cq, void* tag) {\n");
-    printer->Print(*vars,
-                   "  return ::grpc::ClientAsyncWriter< $Request$>::Create("
-                   "channel_.get(), cq, "
-                   "rpcmethod_$Method$_, "
-                   "context, response, tag);\n"
-                   "}\n\n");
+    for (auto async_prefix : async_prefixes) {
+      (*vars)["AsyncPrefix"] = async_prefix.prefix;
+      (*vars)["AsyncStart"] = async_prefix.start;
+      printer->Print(*vars,
+                     "::grpc::ClientAsyncWriter< $Request$>* "
+                     "$ns$$Service$::Stub::$AsyncPrefix$$Method$Raw("
+                     "::grpc::ClientContext* context, $Response$* response, "
+                     "::grpc::CompletionQueue* cq, void* tag) {\n");
+      printer->Print(*vars,
+                     "  return ::grpc::ClientAsyncWriter< $Request$>::Create("
+                     "channel_.get(), cq, "
+                     "rpcmethod_$Method$_, "
+                     "context, response, tag, $AsyncStart$);\n"
+                     "}\n\n");
+    }
   } else if (ServerOnlyStreaming(method)) {
     printer->Print(
         *vars,
@@ -1134,17 +1205,22 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                    "rpcmethod_$Method$_, "
                    "context, request);\n"
                    "}\n\n");
-    printer->Print(*vars,
-                   "::grpc::ClientAsyncReader< $Response$>* "
-                   "$ns$$Service$::Stub::Async$Method$Raw("
-                   "::grpc::ClientContext* context, const $Request$& request, "
-                   "::grpc::CompletionQueue* cq, void* tag) {\n");
-    printer->Print(*vars,
-                   "  return ::grpc::ClientAsyncReader< $Response$>::Create("
-                   "channel_.get(), cq, "
-                   "rpcmethod_$Method$_, "
-                   "context, request, tag);\n"
-                   "}\n\n");
+    for (auto async_prefix : async_prefixes) {
+      (*vars)["AsyncPrefix"] = async_prefix.prefix;
+      (*vars)["AsyncStart"] = async_prefix.start;
+      printer->Print(
+          *vars,
+          "::grpc::ClientAsyncReader< $Response$>* "
+          "$ns$$Service$::Stub::$AsyncPrefix$$Method$Raw("
+          "::grpc::ClientContext* context, const $Request$& request, "
+          "::grpc::CompletionQueue* cq, void* tag) {\n");
+      printer->Print(*vars,
+                     "  return ::grpc::ClientAsyncReader< $Response$>::Create("
+                     "channel_.get(), cq, "
+                     "rpcmethod_$Method$_, "
+                     "context, request, tag, $AsyncStart$);\n"
+                     "}\n\n");
+    }
   } else if (method->BidiStreaming()) {
     printer->Print(
         *vars,
@@ -1157,19 +1233,23 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                    "rpcmethod_$Method$_, "
                    "context);\n"
                    "}\n\n");
-    printer->Print(
-        *vars,
-        "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>* "
-        "$ns$$Service$::Stub::Async$Method$Raw(::grpc::ClientContext* context, "
-        "::grpc::CompletionQueue* cq, void* tag) {\n");
-    printer->Print(
-        *vars,
-        "  return "
-        "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>::Create("
-        "channel_.get(), cq, "
-        "rpcmethod_$Method$_, "
-        "context, tag);\n"
-        "}\n\n");
+    for (auto async_prefix : async_prefixes) {
+      (*vars)["AsyncPrefix"] = async_prefix.prefix;
+      (*vars)["AsyncStart"] = async_prefix.start;
+      printer->Print(*vars,
+                     "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>* "
+                     "$ns$$Service$::Stub::$AsyncPrefix$$Method$Raw(::grpc::"
+                     "ClientContext* context, "
+                     "::grpc::CompletionQueue* cq, void* tag) {\n");
+      printer->Print(
+          *vars,
+          "  return "
+          "::grpc::ClientAsyncReaderWriter< $Request$, $Response$>::Create("
+          "channel_.get(), cq, "
+          "rpcmethod_$Method$_, "
+          "context, tag, $AsyncStart$);\n"
+          "}\n\n");
+    }
   }
 }
 
@@ -1465,45 +1545,59 @@ void PrintMockClientMethods(grpc_generator::Printer *printer,
         *vars,
         "MOCK_METHOD3($Method$, ::grpc::Status(::grpc::ClientContext* context, "
         "const $Request$& request, $Response$* response));\n");
-    printer->Print(*vars,
-                   "MOCK_METHOD3(Async$Method$Raw, "
-                   "::grpc::ClientAsyncResponseReaderInterface< $Response$>*"
-                   "(::grpc::ClientContext* context, const $Request$& request, "
-                   "::grpc::CompletionQueue* cq));\n");
+    for (auto async_prefix : {"Async", "PrepareAsync"}) {
+      (*vars)["AsyncPrefix"] = async_prefix;
+      printer->Print(
+          *vars,
+          "MOCK_METHOD3($AsyncPrefix$$Method$Raw, "
+          "::grpc::ClientAsyncResponseReaderInterface< $Response$>*"
+          "(::grpc::ClientContext* context, const $Request$& request, "
+          "::grpc::CompletionQueue* cq));\n");
+    }
   } else if (ClientOnlyStreaming(method)) {
     printer->Print(
         *vars,
         "MOCK_METHOD2($Method$Raw, "
         "::grpc::ClientWriterInterface< $Request$>*"
         "(::grpc::ClientContext* context, $Response$* response));\n");
-    printer->Print(*vars,
-                   "MOCK_METHOD4(Async$Method$Raw, "
-                   "::grpc::ClientAsyncWriterInterface< $Request$>*"
-                   "(::grpc::ClientContext* context, $Response$* response, "
-                   "::grpc::CompletionQueue* cq, void* tag));\n");
+    for (auto async_prefix : {"Async", "PrepareAsync"}) {
+      (*vars)["AsyncPrefix"] = async_prefix;
+      printer->Print(*vars,
+                     "MOCK_METHOD4($AsyncPrefix$$Method$Raw, "
+                     "::grpc::ClientAsyncWriterInterface< $Request$>*"
+                     "(::grpc::ClientContext* context, $Response$* response, "
+                     "::grpc::CompletionQueue* cq, void* tag));\n");
+    }
   } else if (ServerOnlyStreaming(method)) {
     printer->Print(
         *vars,
         "MOCK_METHOD2($Method$Raw, "
         "::grpc::ClientReaderInterface< $Response$>*"
         "(::grpc::ClientContext* context, const $Request$& request));\n");
-    printer->Print(*vars,
-                   "MOCK_METHOD4(Async$Method$Raw, "
-                   "::grpc::ClientAsyncReaderInterface< $Response$>*"
-                   "(::grpc::ClientContext* context, const $Request$& request, "
-                   "::grpc::CompletionQueue* cq, void* tag));\n");
+    for (auto async_prefix : {"Async", "PrepareAsync"}) {
+      (*vars)["AsyncPrefix"] = async_prefix;
+      printer->Print(
+          *vars,
+          "MOCK_METHOD4($AsyncPrefix$$Method$Raw, "
+          "::grpc::ClientAsyncReaderInterface< $Response$>*"
+          "(::grpc::ClientContext* context, const $Request$& request, "
+          "::grpc::CompletionQueue* cq, void* tag));\n");
+    }
   } else if (method->BidiStreaming()) {
     printer->Print(
         *vars,
         "MOCK_METHOD1($Method$Raw, "
         "::grpc::ClientReaderWriterInterface< $Request$, $Response$>*"
         "(::grpc::ClientContext* context));\n");
-    printer->Print(
-        *vars,
-        "MOCK_METHOD3(Async$Method$Raw, "
-        "::grpc::ClientAsyncReaderWriterInterface<$Request$, $Response$>*"
-        "(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, "
-        "void* tag));\n");
+    for (auto async_prefix : {"Async", "PrepareAsync"}) {
+      (*vars)["AsyncPrefix"] = async_prefix;
+      printer->Print(
+          *vars,
+          "MOCK_METHOD3($AsyncPrefix$$Method$Raw, "
+          "::grpc::ClientAsyncReaderWriterInterface<$Request$, $Response$>*"
+          "(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, "
+          "void* tag));\n");
+    }
   }
 }
 
