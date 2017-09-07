@@ -36,7 +36,7 @@ class ClientAsyncStreamingInterface {
   virtual ~ClientAsyncStreamingInterface() {}
 
   /// Start the call that was set up by the constructor
-  virtual void StartCall() = 0;
+  virtual void StartCall(void* tag) = 0;
 
   /// Request notification of the reading of the initial metadata. Completion
   /// will be notified by \a tag on the associated completion queue.
@@ -168,11 +168,11 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   static ClientAsyncReader* Create(ChannelInterface* channel,
                                    CompletionQueue* cq, const RpcMethod& method,
                                    ClientContext* context, const W& request,
-                                   void* tag, bool start) {
+                                   bool start, void* tag) {
     Call call = channel->CreateCall(method, context, cq);
     return new (g_core_codegen_interface->grpc_call_arena_alloc(
         call.call(), sizeof(ClientAsyncReader)))
-        ClientAsyncReader(call, context, request, tag, start);
+        ClientAsyncReader(call, context, request, start, tag);
   }
 
   // always allocated against a call arena, no memory free required
@@ -180,7 +180,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
     assert(size == sizeof(ClientAsyncReader));
   }
 
-  void StartCall() override { call_.PerformOps(&init_ops_); }
+  void StartCall(void* tag) override { StartCallInternal(tag); }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata
   /// method for semantics.
@@ -224,15 +224,19 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
  private:
   template <class W>
   ClientAsyncReader(Call call, ClientContext* context, const W& request,
-                    void* tag, bool start)
+                    bool start, void* tag)
       : context_(context), call_(call) {
-    init_ops_.set_output_tag(tag);
-    init_ops_.SendInitialMetadata(context->send_initial_metadata_,
-                                  context->initial_metadata_flags());
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(init_ops_.SendMessage(request).ok());
     init_ops_.ClientSendClose();
-    if (start) StartCall();
+    if (start) StartCallInternal(tag);
+  }
+
+  void StartCallInternal(void* tag) {
+    init_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                  context_->initial_metadata_flags());
+    init_ops_.set_output_tag(tag);
+    call_.PerformOps(&init_ops_);
   }
 
   ClientContext* context_;
@@ -274,11 +278,11 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   static ClientAsyncWriter* Create(ChannelInterface* channel,
                                    CompletionQueue* cq, const RpcMethod& method,
                                    ClientContext* context, R* response,
-                                   void* tag, bool start) {
+                                   bool start, void* tag) {
     Call call = channel->CreateCall(method, context, cq);
     return new (g_core_codegen_interface->grpc_call_arena_alloc(
         call.call(), sizeof(ClientAsyncWriter)))
-        ClientAsyncWriter(call, context, response, tag, start);
+        ClientAsyncWriter(call, context, response, start, tag);
   }
 
   // always allocated against a call arena, no memory free required
@@ -286,14 +290,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
     assert(size == sizeof(ClientAsyncWriter));
   }
 
-  void StartCall() override {
-    // if corked bit is set in context, we just keep the initial metadata
-    // buffered up to coalesce with later message send. No op is performed.
-    if (!context_->initial_metadata_corked_) {
-      write_ops_.set_output_tag(constructor_tag_);
-      call_.PerformOps(&write_ops_);
-    }
-  }
+  void StartCall(void* tag) override { StartCallInternal(tag); }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata method for
   /// semantics.
@@ -352,19 +349,27 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
 
  private:
   template <class R>
-  ClientAsyncWriter(Call call, ClientContext* context, R* response, void* tag,
-                    bool start)
-      : context_(context), call_(call), constructor_tag_(tag) {
+  ClientAsyncWriter(Call call, ClientContext* context, R* response, bool start,
+                    void* tag)
+      : context_(context), call_(call) {
     finish_ops_.RecvMessage(response);
     finish_ops_.AllowNoMessage();
-    write_ops_.SendInitialMetadata(context->send_initial_metadata_,
-                                   context->initial_metadata_flags());
-    if (start) StartCall();
+    if (start) StartCallInternal(tag);
+  }
+
+  void StartCallInternal(void* tag) {
+    write_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                   context_->initial_metadata_flags());
+    // if corked bit is set in context, we just keep the initial metadata
+    // buffered up to coalesce with later message send. No op is performed.
+    if (!context_->initial_metadata_corked_) {
+      write_ops_.set_output_tag(tag);
+      call_.PerformOps(&write_ops_);
+    }
   }
 
   ClientContext* context_;
   Call call_;
-  void* constructor_tag_;
   CallOpSet<CallOpRecvInitialMetadata> meta_ops_;
   CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpClientSendClose>
       write_ops_;
@@ -404,13 +409,13 @@ class ClientAsyncReaderWriter final
   static ClientAsyncReaderWriter* Create(ChannelInterface* channel,
                                          CompletionQueue* cq,
                                          const RpcMethod& method,
-                                         ClientContext* context, void* tag,
-                                         bool start) {
+                                         ClientContext* context, bool start,
+                                         void* tag) {
     Call call = channel->CreateCall(method, context, cq);
 
     return new (g_core_codegen_interface->grpc_call_arena_alloc(
         call.call(), sizeof(ClientAsyncReaderWriter)))
-        ClientAsyncReaderWriter(call, context, tag, start);
+        ClientAsyncReaderWriter(call, context, start, tag);
   }
 
   // always allocated against a call arena, no memory free required
@@ -418,14 +423,7 @@ class ClientAsyncReaderWriter final
     assert(size == sizeof(ClientAsyncReaderWriter));
   }
 
-  void StartCall() override {
-    // if corked bit is set in context, we just keep the initial metadata
-    // buffered up to coalesce with later message send. No op is performed.
-    if (!context_->initial_metadata_corked_) {
-      write_ops_.set_output_tag(constructor_tag_);
-      call_.PerformOps(&write_ops_);
-    }
-  }
+  void StartCall(void* tag) override { StartCallInternal(tag); }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata method
   /// for semantics of this method.
@@ -489,17 +487,25 @@ class ClientAsyncReaderWriter final
   }
 
  private:
-  ClientAsyncReaderWriter(Call call, ClientContext* context, void* tag,
-                          bool start)
-      : context_(context), call_(call), constructor_tag_(tag) {
-    write_ops_.SendInitialMetadata(context->send_initial_metadata_,
-                                   context->initial_metadata_flags());
-    if (start) StartCall();
+  ClientAsyncReaderWriter(Call call, ClientContext* context, bool start,
+                          void* tag)
+      : context_(context), call_(call) {
+    if (start) StartCallInternal(tag);
+  }
+
+  void StartCallInternal(void* tag) {
+    write_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                   context_->initial_metadata_flags());
+    // if corked bit is set in context, we just keep the initial metadata
+    // buffered up to coalesce with later message send. No op is performed.
+    if (!context_->initial_metadata_corked_) {
+      write_ops_.set_output_tag(tag);
+      call_.PerformOps(&write_ops_);
+    }
   }
 
   ClientContext* context_;
   Call call_;
-  void* constructor_tag_;
   CallOpSet<CallOpRecvInitialMetadata> meta_ops_;
   CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>> read_ops_;
   CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpClientSendClose>

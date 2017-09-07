@@ -95,7 +95,7 @@ class ClientAsyncResponseReader final
     assert(size == sizeof(ClientAsyncResponseReader));
   }
 
-  void StartCall() override { call_.PerformOps(&init_buf); }
+  void StartCall() override { StartCallInternal(); }
 
   /// See \a ClientAsyncResponseReaderInterface::ReadInitialMetadata for
   /// semantics.
@@ -135,12 +135,17 @@ class ClientAsyncResponseReader final
   ClientAsyncResponseReader(Call call, ClientContext* context, const W& request,
                             bool start)
       : context_(context), call_(call) {
-    init_buf.SendInitialMetadata(context->send_initial_metadata_,
-                                 context->initial_metadata_flags());
+    // Bind the metadata at time of StartCallInternal but set up the rest here
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(init_buf.SendMessage(request).ok());
     init_buf.ClientSendClose();
-    if (start) StartCall();
+    if (start) StartCallInternal();
+  }
+
+  void StartCallInternal() {
+    init_buf.SendInitialMetadata(context_->send_initial_metadata_,
+                                 context_->initial_metadata_flags());
+    call_.PerformOps(&init_buf);
   }
 
   // disable operator new

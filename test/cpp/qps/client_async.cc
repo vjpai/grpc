@@ -310,8 +310,7 @@ class ClientRpcContextStreamingPingPongImpl : public ClientRpcContext {
       std::function<gpr_timespec()> next_issue,
       std::function<std::unique_ptr<
           grpc::ClientAsyncReaderWriter<RequestType, ResponseType>>(
-          BenchmarkService::Stub*, grpc::ClientContext*, CompletionQueue*,
-          void*)>
+          BenchmarkService::Stub*, grpc::ClientContext*, CompletionQueue*)>
           prepare_req,
       std::function<void(grpc::Status, ResponseType*)> on_done)
       : context_(),
@@ -409,9 +408,9 @@ class ClientRpcContextStreamingPingPongImpl : public ClientRpcContext {
   State next_state_;
   std::function<void(grpc::Status, ResponseType*)> callback_;
   std::function<gpr_timespec()> next_issue_;
-  std::function<std::unique_ptr<
-      grpc::ClientAsyncReaderWriter<RequestType, ResponseType>>(
-      BenchmarkService::Stub*, grpc::ClientContext*, CompletionQueue*, void*)>
+  std::function<
+      std::unique_ptr<grpc::ClientAsyncReaderWriter<RequestType, ResponseType>>(
+          BenchmarkService::Stub*, grpc::ClientContext*, CompletionQueue*)>
       prepare_req_;
   grpc::Status status_;
   double start_;
@@ -426,9 +425,9 @@ class ClientRpcContextStreamingPingPongImpl : public ClientRpcContext {
     cq_ = cq;
     messages_per_stream_ = messages_per_stream;
     messages_issued_ = 0;
-    stream_ = prepare_req_(stub_, &context_, cq, ClientRpcContext::tag(this));
+    stream_ = prepare_req_(stub_, &context_, cq);
     next_state_ = State::STREAM_IDLE;
-    stream_->StartCall();
+    stream_->StartCall(ClientRpcContext::tag(this));
   }
 };
 
@@ -448,8 +447,8 @@ class AsyncStreamingPingPongClient final
   static std::unique_ptr<
       grpc::ClientAsyncReaderWriter<SimpleRequest, SimpleResponse>>
   PrepareReq(BenchmarkService::Stub* stub, grpc::ClientContext* ctx,
-             CompletionQueue* cq, void* tag) {
-    auto stream = stub->PrepareAsyncStreamingCall(ctx, cq, tag);
+             CompletionQueue* cq) {
+    auto stream = stub->PrepareAsyncStreamingCall(ctx, cq);
     return stream;
   };
   static ClientRpcContext* SetupCtx(BenchmarkService::Stub* stub,
@@ -470,7 +469,7 @@ class ClientRpcContextStreamingFromClientImpl : public ClientRpcContext {
       std::function<gpr_timespec()> next_issue,
       std::function<std::unique_ptr<grpc::ClientAsyncWriter<RequestType>>(
           BenchmarkService::Stub*, grpc::ClientContext*, ResponseType*,
-          CompletionQueue*, void*)>
+          CompletionQueue*)>
           prepare_req,
       std::function<void(grpc::Status, ResponseType*)> on_done)
       : context_(),
@@ -547,7 +546,7 @@ class ClientRpcContextStreamingFromClientImpl : public ClientRpcContext {
   std::function<gpr_timespec()> next_issue_;
   std::function<std::unique_ptr<grpc::ClientAsyncWriter<RequestType>>(
       BenchmarkService::Stub*, grpc::ClientContext*, ResponseType*,
-      CompletionQueue*, void*)>
+      CompletionQueue*)>
       prepare_req_;
   grpc::Status status_;
   double start_;
@@ -555,10 +554,9 @@ class ClientRpcContextStreamingFromClientImpl : public ClientRpcContext {
 
   void StartInternal(CompletionQueue* cq) {
     cq_ = cq;
-    stream_ = prepare_req_(stub_, &context_, &response_, cq,
-                           ClientRpcContext::tag(this));
+    stream_ = prepare_req_(stub_, &context_, &response_, cq);
     next_state_ = State::STREAM_IDLE;
-    stream_->StartCall();
+    stream_->StartCall(ClientRpcContext::tag(this));
   }
 };
 
@@ -577,8 +575,8 @@ class AsyncStreamingFromClientClient final
   static void CheckDone(grpc::Status s, SimpleResponse* response) {}
   static std::unique_ptr<grpc::ClientAsyncWriter<SimpleRequest>> PrepareReq(
       BenchmarkService::Stub* stub, grpc::ClientContext* ctx,
-      SimpleResponse* resp, CompletionQueue* cq, void* tag) {
-    auto stream = stub->PrepareAsyncStreamingFromClient(ctx, resp, cq, tag);
+      SimpleResponse* resp, CompletionQueue* cq) {
+    auto stream = stub->PrepareAsyncStreamingFromClient(ctx, resp, cq);
     return stream;
   };
   static ClientRpcContext* SetupCtx(BenchmarkService::Stub* stub,
@@ -599,7 +597,7 @@ class ClientRpcContextStreamingFromServerImpl : public ClientRpcContext {
       std::function<gpr_timespec()> next_issue,
       std::function<std::unique_ptr<grpc::ClientAsyncReader<ResponseType>>(
           BenchmarkService::Stub*, grpc::ClientContext*, const RequestType&,
-          CompletionQueue*, void*)>
+          CompletionQueue*)>
           prepare_req,
       std::function<void(grpc::Status, ResponseType*)> on_done)
       : context_(),
@@ -659,7 +657,7 @@ class ClientRpcContextStreamingFromServerImpl : public ClientRpcContext {
   std::function<gpr_timespec()> next_issue_;
   std::function<std::unique_ptr<grpc::ClientAsyncReader<ResponseType>>(
       BenchmarkService::Stub*, grpc::ClientContext*, const RequestType&,
-      CompletionQueue*, void*)>
+      CompletionQueue*)>
       prepare_req_;
   grpc::Status status_;
   double start_;
@@ -668,10 +666,9 @@ class ClientRpcContextStreamingFromServerImpl : public ClientRpcContext {
   void StartInternal(CompletionQueue* cq) {
     // TODO(vjpai): Add support to rate-pace this
     cq_ = cq;
-    stream_ =
-        prepare_req_(stub_, &context_, req_, cq, ClientRpcContext::tag(this));
+    stream_ = prepare_req_(stub_, &context_, req_, cq);
     next_state_ = State::STREAM_IDLE;
-    stream_->StartCall();
+    stream_->StartCall(ClientRpcContext::tag(this));
   }
 };
 
@@ -690,8 +687,8 @@ class AsyncStreamingFromServerClient final
   static void CheckDone(grpc::Status s, SimpleResponse* response) {}
   static std::unique_ptr<grpc::ClientAsyncReader<SimpleResponse>> PrepareReq(
       BenchmarkService::Stub* stub, grpc::ClientContext* ctx,
-      const SimpleRequest& req, CompletionQueue* cq, void* tag) {
-    auto stream = stub->PrepareAsyncStreamingFromServer(ctx, req, cq, tag);
+      const SimpleRequest& req, CompletionQueue* cq) {
+    auto stream = stub->PrepareAsyncStreamingFromServer(ctx, req, cq);
     return stream;
   };
   static ClientRpcContext* SetupCtx(BenchmarkService::Stub* stub,
@@ -711,7 +708,7 @@ class ClientRpcContextGenericStreamingImpl : public ClientRpcContext {
       std::function<gpr_timespec()> next_issue,
       std::function<std::unique_ptr<grpc::GenericClientAsyncReaderWriter>(
           grpc::GenericStub*, grpc::ClientContext*,
-          const grpc::string& method_name, CompletionQueue*, void*)>
+          const grpc::string& method_name, CompletionQueue*)>
           prepare_req,
       std::function<void(grpc::Status, ByteBuffer*)> on_done)
       : context_(),
@@ -811,7 +808,7 @@ class ClientRpcContextGenericStreamingImpl : public ClientRpcContext {
   std::function<gpr_timespec()> next_issue_;
   std::function<std::unique_ptr<grpc::GenericClientAsyncReaderWriter>(
       grpc::GenericStub*, grpc::ClientContext*, const grpc::string&,
-      CompletionQueue*, void*)>
+      CompletionQueue*)>
       prepare_req_;
   grpc::Status status_;
   double start_;
@@ -827,10 +824,9 @@ class ClientRpcContextGenericStreamingImpl : public ClientRpcContext {
         "/grpc.testing.BenchmarkService/StreamingCall");
     messages_per_stream_ = messages_per_stream;
     messages_issued_ = 0;
-    stream_ = prepare_req_(stub_, &context_, kMethodName, cq,
-                           ClientRpcContext::tag(this));
+    stream_ = prepare_req_(stub_, &context_, kMethodName, cq);
     next_state_ = State::STREAM_IDLE;
-    stream_->StartCall();
+    stream_->StartCall(ClientRpcContext::tag(this));
   }
 };
 
@@ -854,8 +850,8 @@ class GenericAsyncStreamingClient final
   static void CheckDone(grpc::Status s, ByteBuffer* response) {}
   static std::unique_ptr<grpc::GenericClientAsyncReaderWriter> PrepareReq(
       grpc::GenericStub* stub, grpc::ClientContext* ctx,
-      const grpc::string& method_name, CompletionQueue* cq, void* tag) {
-    auto stream = stub->PrepareCall(ctx, method_name, cq, tag);
+      const grpc::string& method_name, CompletionQueue* cq) {
+    auto stream = stub->PrepareCall(ctx, method_name, cq);
     return stream;
   };
   static ClientRpcContext* SetupCtx(grpc::GenericStub* stub,

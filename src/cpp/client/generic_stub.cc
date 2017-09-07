@@ -25,11 +25,11 @@ namespace grpc {
 namespace {
 std::unique_ptr<GenericClientAsyncReaderWriter> CallInternal(
     ChannelInterface* channel, ClientContext* context,
-    const grpc::string& method, CompletionQueue* cq, void* tag, bool start) {
+    const grpc::string& method, CompletionQueue* cq, bool start, void* tag) {
   return std::unique_ptr<GenericClientAsyncReaderWriter>(
       GenericClientAsyncReaderWriter::Create(
           channel, cq, RpcMethod(method.c_str(), RpcMethod::BIDI_STREAMING),
-          context, tag, start));
+          context, start, tag));
 }
 
 }  // namespace
@@ -38,14 +38,13 @@ std::unique_ptr<GenericClientAsyncReaderWriter> CallInternal(
 std::unique_ptr<GenericClientAsyncReaderWriter> GenericStub::Call(
     ClientContext* context, const grpc::string& method, CompletionQueue* cq,
     void* tag) {
-  return CallInternal(channel_.get(), context, method, cq, tag, true);
+  return CallInternal(channel_.get(), context, method, cq, true, tag);
 }
 
 // setup a call to a named method
 std::unique_ptr<GenericClientAsyncReaderWriter> GenericStub::PrepareCall(
-    ClientContext* context, const grpc::string& method, CompletionQueue* cq,
-    void* tag) {
-  return CallInternal(channel_.get(), context, method, cq, tag, false);
+    ClientContext* context, const grpc::string& method, CompletionQueue* cq) {
+  return CallInternal(channel_.get(), context, method, cq, false, nullptr);
 }
 
 }  // namespace grpc
