@@ -39,7 +39,9 @@ class ClientAsyncResponseReaderInterface {
  public:
   virtual ~ClientAsyncResponseReaderInterface() {}
 
-  /// Start the call that was set up by the constructor
+  /// Start the call that was set up by the constructor, but only if the
+  /// constructor was invoked through the "Prepare" API which doesn't actually
+  /// start the call
   virtual void StartCall() = 0;
 
   /// Request notification of the reading of initial metadata. Completion
@@ -73,9 +75,10 @@ template <class R>
 class ClientAsyncResponseReader final
     : public ClientAsyncResponseReaderInterface<R> {
  public:
-  /// Start a call and write the request out.
+  /// Start a call and write the request out if \a start is set.
   /// \a tag will be notified on \a cq when the call has been started (i.e.
   /// intitial metadata sent) and \a request has been written out.
+  /// If \a start is not set, the actual call must be initiated by StartCall
   /// Note that \a context will be used to fill in custom initial metadata
   /// used to send to the server when starting the call.
   template <class W>
@@ -95,7 +98,11 @@ class ClientAsyncResponseReader final
     assert(size == sizeof(ClientAsyncResponseReader));
   }
 
-  void StartCall() override { StartCallInternal(); }
+  void StartCall() override {
+    assert(!started_);
+    started_ = true;
+    StartCallInternal();
+  }
 
   /// See \a ClientAsyncResponseReaderInterface::ReadInitialMetadata for
   /// semantics.
@@ -104,6 +111,7 @@ class ClientAsyncResponseReader final
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata sent from the server.
   void ReadInitialMetadata(void* tag) override {
+    assert(started_);
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
     meta_buf.set_output_tag(tag);
@@ -117,6 +125,7 @@ class ClientAsyncResponseReader final
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata sent from the server.
   void Finish(R* msg, Status* status, void* tag) override {
+    assert(started_);
     finish_buf.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       finish_buf.RecvInitialMetadata(context_);
@@ -130,11 +139,12 @@ class ClientAsyncResponseReader final
  private:
   ClientContext* const context_;
   Call call_;
+  bool started_;
 
   template <class W>
   ClientAsyncResponseReader(Call call, ClientContext* context, const W& request,
                             bool start)
-      : context_(context), call_(call) {
+      : context_(context), call_(call), started_(start) {
     // Bind the metadata at time of StartCallInternal but set up the rest here
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(init_buf.SendMessage(request).ok());

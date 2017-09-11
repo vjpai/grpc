@@ -35,7 +35,9 @@ class ClientAsyncStreamingInterface {
  public:
   virtual ~ClientAsyncStreamingInterface() {}
 
-  /// Start the call that was set up by the constructor
+  /// Start the call that was set up by the constructor, but only if the
+  /// constructor was invoked through the "Prepare" API which doesn't actually
+  /// start the call
   virtual void StartCall(void* tag) = 0;
 
   /// Request notification of the reading of the initial metadata. Completion
@@ -159,9 +161,11 @@ class ClientAsyncReaderInterface : public ClientAsyncStreamingInterface,
 template <class R>
 class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
  public:
-  /// Create a stream and write the first request out.
+  /// Create a stream object.
+  /// Write the first request out if \a start is set.
   /// \a tag will be notified on \a cq when the call has been started and
-  /// \a request has been written out.
+  /// \a request has been written out. If \a start is not set, \a tag must be
+  /// nullptr and the actual call must be initiated by StartCall
   /// Note that \a context will be used to fill in custom initial metadata
   /// used to send to the server when starting the call.
   template <class W>
@@ -180,7 +184,11 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
     assert(size == sizeof(ClientAsyncReader));
   }
 
-  void StartCall(void* tag) override { StartCallInternal(tag); }
+  void StartCall(void* tag) override {
+    assert(!started_);
+    started_ = true;
+    StartCallInternal(tag);
+  }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata
   /// method for semantics.
@@ -191,6 +199,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   ///     calling code can access the received metadata through the
   ///     \a ClientContext.
   void ReadInitialMetadata(void* tag) override {
+    assert(started_);
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
     meta_ops_.set_output_tag(tag);
@@ -199,6 +208,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   }
 
   void Read(R* msg, void* tag) override {
+    assert(started_);
     read_ops_.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       read_ops_.RecvInitialMetadata(context_);
@@ -213,6 +223,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata received from the server.
   void Finish(Status* status, void* tag) override {
+    assert(started_);
     finish_ops_.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       finish_ops_.RecvInitialMetadata(context_);
@@ -225,11 +236,15 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   template <class W>
   ClientAsyncReader(Call call, ClientContext* context, const W& request,
                     bool start, void* tag)
-      : context_(context), call_(call) {
+      : context_(context), call_(call), started_(start) {
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(init_ops_.SendMessage(request).ok());
     init_ops_.ClientSendClose();
-    if (start) StartCallInternal(tag);
+    if (start) {
+      StartCallInternal(tag);
+    } else {
+      assert(tag == nullptr);
+    }
   }
 
   void StartCallInternal(void* tag) {
@@ -241,6 +256,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
 
   ClientContext* context_;
   Call call_;
+  bool started_;
   CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpClientSendClose>
       init_ops_;
   CallOpSet<CallOpRecvInitialMetadata> meta_ops_;
@@ -266,9 +282,12 @@ class ClientAsyncWriterInterface : public ClientAsyncStreamingInterface,
 template <class W>
 class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
  public:
-  /// Create a stream and write the first request out.
+  /// Create a stream object.
+  /// Start the RPC if \a start is set
   /// \a tag will be notified on \a cq when the call has been started (i.e.
   /// intitial metadata sent) and \a request has been written out.
+  /// If \a start is not set, \a tag must be nullptr and the actual call
+  /// must be initiated by StartCall
   /// Note that \a context will be used to fill in custom initial metadata
   /// used to send to the server when starting the call.
   /// \a response will be filled in with the single expected response
@@ -290,7 +309,11 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
     assert(size == sizeof(ClientAsyncWriter));
   }
 
-  void StartCall(void* tag) override { StartCallInternal(tag); }
+  void StartCall(void* tag) override {
+    assert(!started_);
+    started_ = true;
+    StartCallInternal(tag);
+  }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata method for
   /// semantics.
@@ -300,6 +323,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   ///     associated with this call is updated, and the calling code can access
   ///     the received metadata through the \a ClientContext.
   void ReadInitialMetadata(void* tag) override {
+    assert(started_);
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
     meta_ops_.set_output_tag(tag);
@@ -308,6 +332,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   }
 
   void Write(const W& msg, void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(write_ops_.SendMessage(msg).ok());
@@ -315,6 +340,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   }
 
   void Write(const W& msg, WriteOptions options, void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     if (options.is_last_message()) {
       options.set_buffer_hint();
@@ -326,6 +352,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   }
 
   void WritesDone(void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     write_ops_.ClientSendClose();
     call_.PerformOps(&write_ops_);
@@ -339,6 +366,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   ///   - attempts to fill in the \a response parameter passed to this class's
   ///     constructor with the server's response message.
   void Finish(Status* status, void* tag) override {
+    assert(started_);
     finish_ops_.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       finish_ops_.RecvInitialMetadata(context_);
@@ -351,10 +379,14 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   template <class R>
   ClientAsyncWriter(Call call, ClientContext* context, R* response, bool start,
                     void* tag)
-      : context_(context), call_(call) {
+      : context_(context), call_(call), started_(start) {
     finish_ops_.RecvMessage(response);
     finish_ops_.AllowNoMessage();
-    if (start) StartCallInternal(tag);
+    if (start) {
+      StartCallInternal(tag);
+    } else {
+      assert(tag == nullptr);
+    }
   }
 
   void StartCallInternal(void* tag) {
@@ -370,6 +402,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
 
   ClientContext* context_;
   Call call_;
+  bool started_;
   CallOpSet<CallOpRecvInitialMetadata> meta_ops_;
   CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpClientSendClose>
       write_ops_;
@@ -401,9 +434,11 @@ template <class W, class R>
 class ClientAsyncReaderWriter final
     : public ClientAsyncReaderWriterInterface<W, R> {
  public:
-  /// Create a stream and write the first request out.
+  /// Create a stream object.
+  /// Start the RPC request if \a start is set.
   /// \a tag will be notified on \a cq when the call has been started (i.e.
-  /// intitial metadata sent).
+  /// intitial metadata sent). If \a start is not set, \a tag must be
+  /// nullptr and the actual call must be initiated by StartCall
   /// Note that \a context will be used to fill in custom initial metadata
   /// used to send to the server when starting the call.
   static ClientAsyncReaderWriter* Create(ChannelInterface* channel,
@@ -423,7 +458,11 @@ class ClientAsyncReaderWriter final
     assert(size == sizeof(ClientAsyncReaderWriter));
   }
 
-  void StartCall(void* tag) override { StartCallInternal(tag); }
+  void StartCall(void* tag) override {
+    assert(!started_);
+    started_ = true;
+    StartCallInternal(tag);
+  }
 
   /// See the \a ClientAsyncStreamingInterface.ReadInitialMetadata method
   /// for semantics of this method.
@@ -433,6 +472,7 @@ class ClientAsyncReaderWriter final
   ///     is updated with it, and then the receiving initial metadata can
   ///     be accessed through this \a ClientContext.
   void ReadInitialMetadata(void* tag) override {
+    assert(started_);
     GPR_CODEGEN_ASSERT(!context_->initial_metadata_received_);
 
     meta_ops_.set_output_tag(tag);
@@ -441,6 +481,7 @@ class ClientAsyncReaderWriter final
   }
 
   void Read(R* msg, void* tag) override {
+    assert(started_);
     read_ops_.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       read_ops_.RecvInitialMetadata(context_);
@@ -450,6 +491,7 @@ class ClientAsyncReaderWriter final
   }
 
   void Write(const W& msg, void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     // TODO(ctiller): don't assert
     GPR_CODEGEN_ASSERT(write_ops_.SendMessage(msg).ok());
@@ -457,6 +499,7 @@ class ClientAsyncReaderWriter final
   }
 
   void Write(const W& msg, WriteOptions options, void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     if (options.is_last_message()) {
       options.set_buffer_hint();
@@ -468,6 +511,7 @@ class ClientAsyncReaderWriter final
   }
 
   void WritesDone(void* tag) override {
+    assert(started_);
     write_ops_.set_output_tag(tag);
     write_ops_.ClientSendClose();
     call_.PerformOps(&write_ops_);
@@ -478,6 +522,7 @@ class ClientAsyncReaderWriter final
   ///   - the \a ClientContext associated with this call is updated with
   ///     possible initial and trailing metadata sent from the server.
   void Finish(Status* status, void* tag) override {
+    assert(started_);
     finish_ops_.set_output_tag(tag);
     if (!context_->initial_metadata_received_) {
       finish_ops_.RecvInitialMetadata(context_);
@@ -489,8 +534,12 @@ class ClientAsyncReaderWriter final
  private:
   ClientAsyncReaderWriter(Call call, ClientContext* context, bool start,
                           void* tag)
-      : context_(context), call_(call) {
-    if (start) StartCallInternal(tag);
+      : context_(context), call_(call), started_(start) {
+    if (start) {
+      StartCallInternal(tag);
+    } else {
+      assert(tag == nullptr);
+    }
   }
 
   void StartCallInternal(void* tag) {
@@ -506,6 +555,7 @@ class ClientAsyncReaderWriter final
 
   ClientContext* context_;
   Call call_;
+  bool started_;
   CallOpSet<CallOpRecvInitialMetadata> meta_ops_;
   CallOpSet<CallOpRecvInitialMetadata, CallOpRecvMessage<R>> read_ops_;
   CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage, CallOpClientSendClose>
