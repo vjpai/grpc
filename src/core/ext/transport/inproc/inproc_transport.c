@@ -62,96 +62,22 @@ typedef struct inproc_transport {
   struct inproc_stream *stream_list;
 } inproc_transport;
 
-typedef struct sb_list_entry {
-  grpc_slice_buffer sb;
-  struct sb_list_entry *next;
-} sb_list_entry;
-
-// Specialize grpc_byte_stream for our use case
-typedef struct {
-  grpc_byte_stream base;
-  sb_list_entry *le;
-  grpc_error *shutdown_error;
-} inproc_slice_byte_stream;
-
-typedef struct {
-  // TODO (vjpai): Add some inlined elements to avoid alloc in simple cases
-  sb_list_entry *head;
-  sb_list_entry *tail;
-} slice_buffer_list;
-
-static void slice_buffer_list_init(slice_buffer_list *l) {
-  l->head = NULL;
-  l->tail = NULL;
-}
-
-static void sb_list_entry_destroy(grpc_exec_ctx *exec_ctx, sb_list_entry *le) {
-  grpc_slice_buffer_destroy_internal(exec_ctx, &le->sb);
-  gpr_free(le);
-}
-
-static void slice_buffer_list_destroy(grpc_exec_ctx *exec_ctx,
-                                      slice_buffer_list *l) {
-  sb_list_entry *curr = l->head;
-  while (curr != NULL) {
-    sb_list_entry *le = curr;
-    curr = curr->next;
-    sb_list_entry_destroy(exec_ctx, le);
-  }
-  l->head = NULL;
-  l->tail = NULL;
-}
-
-static bool slice_buffer_list_empty(slice_buffer_list *l) {
-  return l->head == NULL;
-}
-
-static void slice_buffer_list_append_entry(slice_buffer_list *l,
-                                           sb_list_entry *next) {
-  next->next = NULL;
-  if (l->tail) {
-    l->tail->next = next;
-    l->tail = next;
-  } else {
-    l->head = next;
-    l->tail = next;
-  }
-}
-
-static grpc_slice_buffer *slice_buffer_list_append(slice_buffer_list *l) {
-  sb_list_entry *next = (sb_list_entry *)gpr_malloc(sizeof(*next));
-  grpc_slice_buffer_init(&next->sb);
-  slice_buffer_list_append_entry(l, next);
-  return &next->sb;
-}
-
-static sb_list_entry *slice_buffer_list_pophead(slice_buffer_list *l) {
-  sb_list_entry *ret = l->head;
-  l->head = l->head->next;
-  if (l->head == NULL) {
-    l->tail = NULL;
-  }
-  return ret;
-}
-
 typedef struct inproc_stream {
   inproc_transport *t;
   grpc_metadata_batch to_read_initial_md;
   uint32_t to_read_initial_md_flags;
   bool to_read_initial_md_filled;
-  slice_buffer_list to_read_message;
   grpc_metadata_batch to_read_trailing_md;
   bool to_read_trailing_md_filled;
-  bool reads_needed;
-  bool read_closure_scheduled;
-  grpc_closure read_closure;
+  bool ops_needed;
+  bool op_closure_scheduled;
+  grpc_closure op_closure;
   // Write buffer used only during gap at init time when client-side
   // stream is set up but server side stream is not yet set up
   grpc_metadata_batch write_buffer_initial_md;
   bool write_buffer_initial_md_filled;
   uint32_t write_buffer_initial_md_flags;
   gpr_timespec write_buffer_deadline;
-  slice_buffer_list write_buffer_message;
   grpc_metadata_batch write_buffer_trailing_md;
   bool write_buffer_trailing_md_filled;
   grpc_error *write_buffer_cancel_error;
@@ -164,11 +90,13 @@ typedef struct inproc_stream {
 
   gpr_arena *arena;
 
+  grpc_transport_stream_op_batch *send_message_op;
   grpc_transport_stream_op_batch *recv_initial_md_op;
   grpc_transport_stream_op_batch *recv_message_op;
   grpc_transport_stream_op_batch *recv_trailing_md_op;
 
-  inproc_slice_byte_stream recv_message_stream;
+  grpc_slice_buffer recv_message;
+  grpc_slice_buffer_stream recv_stream;
 
   bool initial_md_sent;
   bool trailing_md_sent;
@@ -187,54 +115,11 @@ typedef struct inproc_stream {
   struct inproc_stream *stream_list_next;
 } inproc_stream;
 
-static bool inproc_slice_byte_stream_next(grpc_exec_ctx *exec_ctx,
-                                          grpc_byte_stream *bs, size_t max,
-                                          grpc_closure *on_complete) {
-  // Because inproc transport always provides the entire message atomically,
-  // the byte stream always has data available when this function is called.
-  // Thus, this function always returns true (unlike other transports) and
-  // there is never any need to schedule a closure
-  return true;
-}
-
-static grpc_error *inproc_slice_byte_stream_pull(grpc_exec_ctx *exec_ctx,
-                                                 grpc_byte_stream *bs,
-                                                 grpc_slice *slice) {
-  inproc_slice_byte_stream *stream = (inproc_slice_byte_stream *)bs;
-  if (stream->shutdown_error != GRPC_ERROR_NONE) {
-    return GRPC_ERROR_REF(stream->shutdown_error);
-  }
-  *slice = grpc_slice_buffer_take_first(&stream->le->sb);
-  return GRPC_ERROR_NONE;
-}
-
-static void inproc_slice_byte_stream_shutdown(grpc_exec_ctx *exec_ctx,
-                                              grpc_byte_stream *bs,
-                                              grpc_error *error) {
-  inproc_slice_byte_stream *stream = (inproc_slice_byte_stream *)bs;
-  GRPC_ERROR_UNREF(stream->shutdown_error);
-  stream->shutdown_error = error;
-}
-
-static void inproc_slice_byte_stream_destroy(grpc_exec_ctx *exec_ctx,
-                                             grpc_byte_stream *bs) {
-  inproc_slice_byte_stream *stream = (inproc_slice_byte_stream *)bs;
-  sb_list_entry_destroy(exec_ctx, stream->le);
-  GRPC_ERROR_UNREF(stream->shutdown_error);
-}
-
-static const grpc_byte_stream_vtable inproc_slice_byte_stream_vtable = {
-    inproc_slice_byte_stream_next, inproc_slice_byte_stream_pull,
-    inproc_slice_byte_stream_shutdown, inproc_slice_byte_stream_destroy};
-
-void inproc_slice_byte_stream_init(inproc_slice_byte_stream *s,
-                                   sb_list_entry *le) {
-  s->base.length = (uint32_t)le->sb.length;
-  s->base.flags = 0;
-  s->base.vtable = &inproc_slice_byte_stream_vtable;
-  s->le = le;
-  s->shutdown_error = GRPC_ERROR_NONE;
-}
+static grpc_closure do_nothing_closure;
+static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
+                                 grpc_error *error);
+static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
+                             grpc_error *error);
 
 static void ref_transport(inproc_transport *t) {
   INPROC_LOG(GPR_DEBUG, "ref_transport %p", t);
@@ -280,8 +165,6 @@ static void unref_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s,
 static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
   INPROC_LOG(GPR_DEBUG, "really_destroy_stream %p", s);
 
-  slice_buffer_list_destroy(exec_ctx, &s->to_read_message);
-  slice_buffer_list_destroy(exec_ctx, &s->write_buffer_message);
   GRPC_ERROR_UNREF(s->write_buffer_cancel_error);
   GRPC_ERROR_UNREF(s->cancel_self_error);
   GRPC_ERROR_UNREF(s->cancel_other_error);
@@ -292,9 +175,6 @@ static void really_destroy_stream(grpc_exec_ctx *exec_ctx, inproc_stream *s) {
     GRPC_CLOSURE_SCHED(exec_ctx, s->closure_at_destroy, GRPC_ERROR_NONE);
   }
 }
-
-static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
-                               grpc_error *error);
 
 static void log_metadata(const grpc_metadata_batch *md_batch, bool is_client,
                          bool is_initial) {
@@ -359,11 +239,9 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   s->write_buffer_initial_md_filled = false;
   grpc_metadata_batch_init(&s->write_buffer_trailing_md);
   s->write_buffer_trailing_md_filled = false;
-  slice_buffer_list_init(&s->to_read_message);
-  slice_buffer_list_init(&s->write_buffer_message);
-  s->reads_needed = false;
-  s->read_closure_scheduled = false;
-  GRPC_CLOSURE_INIT(&s->read_closure, read_state_machine, s,
+  s->ops_needed = false;
+  s->op_closure_scheduled = false;
+  GRPC_CLOSURE_INIT(&s->op_closure, op_state_machine, s,
                     grpc_schedule_on_exec_ctx);
   s->t = t;
   s->closure_at_destroy = NULL;
@@ -425,11 +303,6 @@ static int init_stream(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
       grpc_metadata_batch_clear(exec_ctx, &cs->write_buffer_initial_md);
       cs->write_buffer_initial_md_filled = false;
     }
-    while (!slice_buffer_list_empty(&cs->write_buffer_message)) {
-      slice_buffer_list_append_entry(
-          &s->to_read_message,
-          slice_buffer_list_pophead(&cs->write_buffer_message));
-    }
     if (cs->write_buffer_trailing_md_filled) {
       fill_in_metadata(exec_ctx, s, &cs->write_buffer_trailing_md, 0,
                        &s->to_read_trailing_md, NULL,
@@ -490,7 +363,7 @@ static void close_other_side_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
 
 static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                                grpc_error *error) {
-  INPROC_LOG(GPR_DEBUG, "read_state_machine %p fail_helper", s);
+  INPROC_LOG(GPR_DEBUG, "op_state_machine %p fail_helper", s);
   // If we're failing this side, we need to make sure that
   // we also send or have already sent trailing metadata
   if (!s->trailing_md_sent) {
@@ -512,13 +385,13 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
       if (other->cancel_other_error == GRPC_ERROR_NONE) {
         other->cancel_other_error = GRPC_ERROR_REF(error);
       }
-      if (other->reads_needed) {
-        if (!other->read_closure_scheduled) {
-          GRPC_CLOSURE_SCHED(exec_ctx, &other->read_closure,
+      if (other->ops_needed) {
+        if (!other->op_closure_scheduled) {
+          GRPC_CLOSURE_SCHED(exec_ctx, &other->op_closure,
                              GRPC_ERROR_REF(error));
-          other->read_closure_scheduled = true;
+          other->op_closure_scheduled = true;
         }
-        other->reads_needed = false;
+        other->ops_needed = false;
       }
     } else if (s->write_buffer_cancel_error == GRPC_ERROR_NONE) {
       s->write_buffer_cancel_error = GRPC_ERROR_REF(error);
@@ -602,12 +475,69 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
   GRPC_ERROR_UNREF(error);
 }
 
-static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
-                               grpc_error *error) {
+static void message_transfer_locked(grpc_exec_ctx *exec_ctx,
+                                    inproc_stream *sender,
+                                    inproc_stream *receiver) {
+  size_t remaining =
+      sender->send_message_op->payload->send_message.send_message->length;
+  grpc_slice_buffer_init(&receiver->recv_message);
+  do {
+    grpc_slice message_slice;
+    grpc_closure unused;
+    GPR_ASSERT(grpc_byte_stream_next(
+        exec_ctx, sender->send_message_op->payload->send_message.send_message,
+        SIZE_MAX, &unused));
+    grpc_error *error = grpc_byte_stream_pull(
+        exec_ctx, sender->send_message_op->payload->send_message.send_message,
+        &message_slice);
+    if (error != GRPC_ERROR_NONE) {
+      cancel_stream_locked(exec_ctx, sender, GRPC_ERROR_REF(error));
+      break;
+    }
+    GPR_ASSERT(error == GRPC_ERROR_NONE);
+    remaining -= GRPC_SLICE_LENGTH(message_slice);
+    grpc_slice_buffer_add(&receiver->recv_message, message_slice);
+  } while (remaining > 0);
+
+  grpc_slice_buffer_stream_init(&receiver->recv_stream, &receiver->recv_message,
+                                0);
+  *receiver->recv_message_op->payload->recv_message.recv_message =
+      &receiver->recv_stream.base;
+  INPROC_LOG(GPR_DEBUG, "message_transfer_locked %p scheduling message-ready",
+             receiver);
+  GRPC_CLOSURE_SCHED(
+      exec_ctx,
+      receiver->recv_message_op->payload->recv_message.recv_message_ready,
+      GRPC_ERROR_NONE);
+  if ((sender->send_message_op != sender->recv_initial_md_op) &&
+      (sender->send_message_op != sender->recv_message_op) &&
+      (sender->send_message_op != sender->recv_trailing_md_op)) {
+    INPROC_LOG(GPR_DEBUG,
+               "message_transfer_locked %p scheduling sender on_complete",
+               sender);
+    GRPC_CLOSURE_SCHED(exec_ctx, sender->send_message_op->on_complete,
+                       GRPC_ERROR_NONE);
+  }
+  if ((receiver->recv_message_op != receiver->recv_initial_md_op) &&
+      (receiver->recv_message_op != receiver->send_message_op) &&
+      (receiver->recv_message_op != receiver->recv_trailing_md_op)) {
+    INPROC_LOG(GPR_DEBUG,
+               "message_transfer_locked %p scheduling receiver on_complete",
+               receiver);
+    GRPC_CLOSURE_SCHED(exec_ctx, receiver->recv_message_op->on_complete,
+                       GRPC_ERROR_NONE);
+  }
+
+  receiver->recv_message_op = NULL;
+  sender->send_message_op = NULL;
+}
+
+static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
+                             grpc_error *error) {
   // This function gets called when we have contents in the unprocessed reads
   // Get what we want based on our ops wanted
   // Schedule our appropriate closures
-  // and then return to reads_needed state if still needed
+  // and then return to ops_needed state if still needed
 
   // Since this is a closure directly invoked by the combiner, it should not
   // unref the error parameter explicitly; the combiner will do that implicitly
@@ -615,11 +545,11 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
 
   bool needs_close = false;
 
-  INPROC_LOG(GPR_DEBUG, "read_state_machine %p", arg);
+  INPROC_LOG(GPR_DEBUG, "op_state_machine %p", arg);
   inproc_stream *s = (inproc_stream *)arg;
   gpr_mu *mu = &s->t->mu->mu;  // keep aside in case s gets closed
   gpr_mu_lock(mu);
-  s->read_closure_scheduled = false;
+  s->op_closure_scheduled = false;
   // cancellation takes precedence
   if (s->cancel_self_error != GRPC_ERROR_NONE) {
     fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(s->cancel_self_error));
@@ -632,89 +562,69 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     goto done;
   }
 
+  inproc_stream *other = s->other_side;
+  if (s->send_message_op) {
+    if (other->recv_message_op) {
+      message_transfer_locked(exec_ctx, s, other);
+    }
+  }
   if (s->recv_initial_md_op) {
-    if (!s->to_read_initial_md_filled) {
-      // We entered the state machine on some other kind of read even though
-      // we still haven't satisfied initial md . That's an error.
-      new_err =
-          GRPC_ERROR_CREATE_FROM_STATIC_STRING("Unexpected frame sequencing");
-      INPROC_LOG(GPR_DEBUG,
-                 "read_state_machine %p scheduling on_complete errors for no "
-                 "initial md %p",
-                 s, new_err);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
-      goto done;
-    } else if (s->initial_md_recvd) {
+    if (s->initial_md_recvd) {
       new_err =
           GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd initial md");
       INPROC_LOG(
           GPR_DEBUG,
-          "read_state_machine %p scheduling on_complete errors for already "
+          "op_state_machine %p scheduling on_complete errors for already "
           "recvd initial md %p",
           s, new_err);
       fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
       goto done;
     }
 
-    s->initial_md_recvd = true;
-    new_err = fill_in_metadata(
-        exec_ctx, s, &s->to_read_initial_md, s->to_read_initial_md_flags,
-        s->recv_initial_md_op->payload->recv_initial_metadata
-            .recv_initial_metadata,
-        s->recv_initial_md_op->payload->recv_initial_metadata.recv_flags, NULL);
-    s->recv_initial_md_op->payload->recv_initial_metadata.recv_initial_metadata
-        ->deadline = s->deadline;
-    grpc_metadata_batch_clear(exec_ctx, &s->to_read_initial_md);
-    s->to_read_initial_md_filled = false;
-    INPROC_LOG(GPR_DEBUG,
-               "read_state_machine %p scheduling initial-metadata-ready %p", s,
-               new_err);
-    GRPC_CLOSURE_SCHED(exec_ctx,
-                       s->recv_initial_md_op->payload->recv_initial_metadata
-                           .recv_initial_metadata_ready,
-                       GRPC_ERROR_REF(new_err));
-    if ((s->recv_initial_md_op != s->recv_message_op) &&
-        (s->recv_initial_md_op != s->recv_trailing_md_op)) {
-      INPROC_LOG(
-          GPR_DEBUG,
-          "read_state_machine %p scheduling initial-metadata-on-complete %p", s,
-          new_err);
-      GRPC_CLOSURE_SCHED(exec_ctx, s->recv_initial_md_op->on_complete,
+    if (s->to_read_initial_md_filled) {
+      s->initial_md_recvd = true;
+      new_err = fill_in_metadata(
+          exec_ctx, s, &s->to_read_initial_md, s->to_read_initial_md_flags,
+          s->recv_initial_md_op->payload->recv_initial_metadata
+              .recv_initial_metadata,
+          s->recv_initial_md_op->payload->recv_initial_metadata.recv_flags,
+          NULL);
+      s->recv_initial_md_op->payload->recv_initial_metadata
+          .recv_initial_metadata->deadline = s->deadline;
+      grpc_metadata_batch_clear(exec_ctx, &s->to_read_initial_md);
+      s->to_read_initial_md_filled = false;
+      INPROC_LOG(GPR_DEBUG,
+                 "op_state_machine %p scheduling initial-metadata-ready %p", s,
+                 new_err);
+      GRPC_CLOSURE_SCHED(exec_ctx,
+                         s->recv_initial_md_op->payload->recv_initial_metadata
+                             .recv_initial_metadata_ready,
                          GRPC_ERROR_REF(new_err));
-    }
-    s->recv_initial_md_op = NULL;
+      if ((s->recv_initial_md_op != s->send_message_op) &&
+          (s->recv_initial_md_op != s->recv_message_op) &&
+          (s->recv_initial_md_op != s->recv_trailing_md_op)) {
+        INPROC_LOG(
+            GPR_DEBUG,
+            "op_state_machine %p scheduling initial-metadata-on-complete %p", s,
+            new_err);
+        GRPC_CLOSURE_SCHED(exec_ctx, s->recv_initial_md_op->on_complete,
+                           GRPC_ERROR_REF(new_err));
+      }
+      s->recv_initial_md_op = NULL;
 
-    if (new_err != GRPC_ERROR_NONE) {
-      INPROC_LOG(GPR_DEBUG,
-                 "read_state_machine %p scheduling on_complete errors2 %p", s,
-                 new_err);
-      fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
-      goto done;
+      if (new_err != GRPC_ERROR_NONE) {
+        INPROC_LOG(GPR_DEBUG,
+                   "op_state_machine %p scheduling on_complete errors2 %p", s,
+                   new_err);
+        fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
+        goto done;
+      }
     }
   }
-  if (s->to_read_initial_md_filled) {
-    new_err = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Unexpected recv frame");
-    fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
-    goto done;
-  }
-  if (!slice_buffer_list_empty(&s->to_read_message) && s->recv_message_op) {
-    inproc_slice_byte_stream_init(
-        &s->recv_message_stream,
-        slice_buffer_list_pophead(&s->to_read_message));
-    *s->recv_message_op->payload->recv_message.recv_message =
-        &s->recv_message_stream.base;
-    INPROC_LOG(GPR_DEBUG, "read_state_machine %p scheduling message-ready", s);
-    GRPC_CLOSURE_SCHED(
-        exec_ctx, s->recv_message_op->payload->recv_message.recv_message_ready,
-        GRPC_ERROR_NONE);
-    if (s->recv_message_op != s->recv_trailing_md_op) {
-      INPROC_LOG(GPR_DEBUG,
-                 "read_state_machine %p scheduling message-on-complete %p", s,
-                 new_err);
-      GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
-                         GRPC_ERROR_REF(new_err));
+  if (s->recv_message_op) {
+    if (other->send_message_op) {
+      message_transfer_locked(exec_ctx, other, s);
     }
-    s->recv_message_op = NULL;
   }
   if (s->to_read_trailing_md_filled) {
     if (s->trailing_md_recvd) {
@@ -722,7 +632,7 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
           GRPC_ERROR_CREATE_FROM_STATIC_STRING("Already recvd trailing md");
       INPROC_LOG(
           GPR_DEBUG,
-          "read_state_machine %p scheduling on_complete errors for already "
+          "op_state_machine %p scheduling on_complete errors for already "
           "recvd trailing md %p",
           s, new_err);
       fail_helper_locked(exec_ctx, s, GRPC_ERROR_REF(new_err));
@@ -731,15 +641,16 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     if (s->recv_message_op != NULL) {
       // This message needs to be wrapped up because it will never be
       // satisfied
-      INPROC_LOG(GPR_DEBUG, "read_state_machine %p scheduling message-ready",
-                 s);
+      INPROC_LOG(GPR_DEBUG, "op_state_machine %p scheduling message-ready", s);
       GRPC_CLOSURE_SCHED(
           exec_ctx,
           s->recv_message_op->payload->recv_message.recv_message_ready,
           GRPC_ERROR_NONE);
-      if (s->recv_message_op != s->recv_trailing_md_op) {
+      if ((s->recv_message_op != s->recv_trailing_md_op) &&
+          (s->recv_message_op != s->recv_initial_md_op) &&
+          (s->recv_message_op != s->send_message_op)) {
         INPROC_LOG(GPR_DEBUG,
-                   "read_state_machine %p scheduling message-on-complete %p", s,
+                   "op_state_machine %p scheduling message-on-complete %p", s,
                    new_err);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
                            GRPC_ERROR_REF(new_err));
@@ -763,60 +674,74 @@ static void read_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
       //    (If the server hasn't already sent its trailing md, it doesn't have
       //     a final status, so don't mark this op complete)
       if (s->t->is_client || s->trailing_md_sent) {
-        INPROC_LOG(
-            GPR_DEBUG,
-            "read_state_machine %p scheduling trailing-md-on-complete %p", s,
-            new_err);
+        INPROC_LOG(GPR_DEBUG,
+                   "op_state_machine %p scheduling trailing-md-on-complete %p",
+                   s, new_err);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                            GRPC_ERROR_REF(new_err));
         s->recv_trailing_md_op = NULL;
         needs_close = true;
       } else {
         INPROC_LOG(GPR_DEBUG,
-                   "read_state_machine %p server needs to delay handling "
+                   "op_state_machine %p server needs to delay handling "
                    "trailing-md-on-complete %p",
                    s, new_err);
       }
     } else {
       INPROC_LOG(
           GPR_DEBUG,
-          "read_state_machine %p has trailing md but not yet waiting for it",
-          s);
+          "op_state_machine %p has trailing md but not yet waiting for it", s);
     }
   }
   if (s->trailing_md_recvd && s->recv_message_op) {
     // No further message will come on this stream, so finish off the
     // recv_message_op
-    INPROC_LOG(GPR_DEBUG, "read_state_machine %p scheduling message-ready", s);
+    INPROC_LOG(GPR_DEBUG, "op_state_machine %p scheduling message-ready", s);
     GRPC_CLOSURE_SCHED(
         exec_ctx, s->recv_message_op->payload->recv_message.recv_message_ready,
         GRPC_ERROR_NONE);
-    if (s->recv_message_op != s->recv_trailing_md_op) {
+    if ((s->recv_message_op != s->recv_trailing_md_op) &&
+        (s->recv_message_op != s->recv_initial_md_op) &&
+        (s->recv_message_op != s->send_message_op)) {
       INPROC_LOG(GPR_DEBUG,
-                 "read_state_machine %p scheduling message-on-complete %p", s,
+                 "op_state_machine %p scheduling message-on-complete %p", s,
                  new_err);
       GRPC_CLOSURE_SCHED(exec_ctx, s->recv_message_op->on_complete,
                          GRPC_ERROR_REF(new_err));
     }
     s->recv_message_op = NULL;
   }
-  if (s->recv_message_op || s->recv_trailing_md_op) {
+  if (s->trailing_md_recvd && s->trailing_md_sent && s->send_message_op) {
+    // Nothing further will try to receive from this stream, so finish off
+    // any outstanding send_message op
+    if ((s->send_message_op != s->recv_trailing_md_op) &&
+        (s->send_message_op != s->recv_initial_md_op) &&
+        (s->send_message_op != s->recv_message_op)) {
+      INPROC_LOG(GPR_DEBUG,
+                 "op_state_machine %p scheduling message-on-complete %p", s,
+                 new_err);
+      GRPC_CLOSURE_SCHED(exec_ctx, s->send_message_op->on_complete,
+                         GRPC_ERROR_REF(new_err));
+    }
+    s->send_message_op = NULL;
+  }
+  if (s->send_message_op || s->recv_initial_md_op || s->recv_message_op ||
+      s->recv_trailing_md_op) {
     // Didn't get the item we wanted so we still need to get
     // rescheduled
-    INPROC_LOG(GPR_DEBUG, "read_state_machine %p still needs closure %p %p", s,
-               s->recv_message_op, s->recv_trailing_md_op);
-    s->reads_needed = true;
+    INPROC_LOG(GPR_DEBUG, "op_state_machine %p still needs closure %p %p %p %p",
+               s, s->send_message_op, s->recv_initial_md_op, s->recv_message_op,
+               s->recv_trailing_md_op);
+    s->ops_needed = true;
   }
 done:
   if (needs_close) {
-    close_other_side_locked(exec_ctx, s, "read_state_machine");
+    close_other_side_locked(exec_ctx, s, "op_state_machine");
     close_stream_locked(exec_ctx, s);
   }
   gpr_mu_unlock(mu);
   GRPC_ERROR_UNREF(new_err);
 }
-
-static grpc_closure do_nothing_closure;
 
 static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                                  grpc_error *error) {
@@ -826,13 +751,13 @@ static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
   if (s->cancel_self_error == GRPC_ERROR_NONE) {
     ret = true;
     s->cancel_self_error = GRPC_ERROR_REF(error);
-    if (s->reads_needed) {
-      if (!s->read_closure_scheduled) {
-        GRPC_CLOSURE_SCHED(exec_ctx, &s->read_closure,
+    if (s->ops_needed) {
+      if (!s->op_closure_scheduled) {
+        GRPC_CLOSURE_SCHED(exec_ctx, &s->op_closure,
                            GRPC_ERROR_REF(s->cancel_self_error));
-        s->read_closure_scheduled = true;
+        s->op_closure_scheduled = true;
       }
-      s->reads_needed = false;
+      s->ops_needed = false;
     }
     // Send trailing md to the other side indicating cancellation, even if we
     // already have
@@ -853,13 +778,13 @@ static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
       if (other->cancel_other_error == GRPC_ERROR_NONE) {
         other->cancel_other_error = GRPC_ERROR_REF(s->cancel_self_error);
       }
-      if (other->reads_needed) {
-        if (!other->read_closure_scheduled) {
-          GRPC_CLOSURE_SCHED(exec_ctx, &other->read_closure,
+      if (other->ops_needed) {
+        if (!other->op_closure_scheduled) {
+          GRPC_CLOSURE_SCHED(exec_ctx, &other->op_closure,
                              GRPC_ERROR_REF(other->cancel_other_error));
-          other->read_closure_scheduled = true;
+          other->op_closure_scheduled = true;
         }
-        other->reads_needed = false;
+        other->ops_needed = false;
       }
     } else if (s->write_buffer_cancel_error == GRPC_ERROR_NONE) {
       s->write_buffer_cancel_error = GRPC_ERROR_REF(s->cancel_self_error);
@@ -930,8 +855,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
   bool needs_close = false;
 
   if (error == GRPC_ERROR_NONE &&
-      (op->send_initial_metadata || op->send_message ||
-       op->send_trailing_metadata)) {
+      (op->send_initial_metadata || op->send_trailing_metadata)) {
     inproc_stream *other = s->other_side;
     if (s->t->is_closed) {
       error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Endpoint already shutdown");
@@ -963,29 +887,12 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
           s->initial_md_sent = true;
         }
       }
-    }
-    if (error == GRPC_ERROR_NONE && op->send_message) {
-      size_t remaining = op->payload->send_message.send_message->length;
-      grpc_slice_buffer *dest = slice_buffer_list_append(
-          (other == NULL) ? &s->write_buffer_message : &other->to_read_message);
-      do {
-        grpc_slice message_slice;
-        grpc_closure unused;
-        GPR_ASSERT(grpc_byte_stream_next(exec_ctx,
-                                         op->payload->send_message.send_message,
-                                         SIZE_MAX, &unused));
-        error = grpc_byte_stream_pull(
-            exec_ctx, op->payload->send_message.send_message, &message_slice);
-        if (error != GRPC_ERROR_NONE) {
-          cancel_stream_locked(exec_ctx, s, GRPC_ERROR_REF(error));
-          break;
-        }
-        GPR_ASSERT(error == GRPC_ERROR_NONE);
-        remaining -= GRPC_SLICE_LENGTH(message_slice);
-        grpc_slice_buffer_add(dest, message_slice);
-      } while (remaining != 0);
-      grpc_byte_stream_destroy(exec_ctx,
-                               op->payload->send_message.send_message);
+      if (other != NULL && other->recv_initial_md_op &&
+          !other->op_closure_scheduled) {
+        GRPC_CLOSURE_SCHED(exec_ctx, &other->op_closure, error);
+        other->op_closure_scheduled = true;
+        other->ops_needed = false;
+      }
     }
     if (error == GRPC_ERROR_NONE && op->send_trailing_metadata) {
       grpc_metadata_batch *dest = (other == NULL) ? &s->write_buffer_trailing_md
@@ -1015,20 +922,22 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
           needs_close = true;
         }
       }
-    }
-    if (other != NULL && other->reads_needed) {
-      if (!other->read_closure_scheduled) {
-        GRPC_CLOSURE_SCHED(exec_ctx, &other->read_closure, error);
-        other->read_closure_scheduled = true;
+      if (other != NULL && other->recv_trailing_md_op &&
+          !other->op_closure_scheduled) {
+        GRPC_CLOSURE_SCHED(exec_ctx, &other->op_closure, error);
+        other->op_closure_scheduled = true;
+        other->ops_needed = false;
       }
-      other->reads_needed = false;
     }
   }
+
   if (error == GRPC_ERROR_NONE &&
-      (op->recv_initial_metadata || op->recv_message ||
+      (op->send_message || op->recv_initial_metadata || op->recv_message ||
        op->recv_trailing_metadata)) {
-    // If there are any reads, mark it so that the read closure will react to
-    // them
+    // Mark ops that need to be processed by the closure
+    if (op->send_message) {
+      s->send_message_op = op;
+    }
     if (op->recv_initial_metadata) {
       s->recv_initial_md_op = op;
     }
@@ -1040,25 +949,25 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     }
 
     // We want to initiate the closure if:
-    // 1. There is initial metadata and something ready to take that
-    // 2. There is a message and something ready to take it
-    // 3. There is trailing metadata, even if nothing specifically wants
-    //    that because that can shut down the message as well
-    if ((s->to_read_initial_md_filled && op->recv_initial_metadata) ||
-        ((!slice_buffer_list_empty(&s->to_read_message) ||
-          s->trailing_md_recvd) &&
-         op->recv_message) ||
+    // 1. We want to send a message and the other side wants to receive it
+    // 2. We want initial metadata and there is some ready
+    // 3. We want to receive a message and there is something ready
+    // 4. There is trailing metadata, even if nothing specifically wants
+    //    that because that can shut down the receive message as well
+    if ((op->send_message && (s->other_side->recv_message_op != NULL)) ||
+        (op->recv_initial_metadata && s->to_read_initial_md_filled) ||
+        (op->recv_message && (s->other_side->send_message_op != NULL)) ||
         (s->to_read_trailing_md_filled)) {
-      if (!s->read_closure_scheduled) {
-        GRPC_CLOSURE_SCHED(exec_ctx, &s->read_closure, GRPC_ERROR_NONE);
-        s->read_closure_scheduled = true;
+      if (!s->op_closure_scheduled) {
+        GRPC_CLOSURE_SCHED(exec_ctx, &s->op_closure, GRPC_ERROR_NONE);
+        s->op_closure_scheduled = true;
       }
     } else {
-      s->reads_needed = true;
+      s->ops_needed = true;
     }
   } else {
     if (error != GRPC_ERROR_NONE) {
-      // Schedule op's read closures that we didn't push to read state machine
+      // Schedule op's closures that we didn't push to op state machine
       if (op->recv_initial_metadata) {
         INPROC_LOG(
             GPR_DEBUG,

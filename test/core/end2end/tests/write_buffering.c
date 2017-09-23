@@ -192,7 +192,6 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
 
   /* now the first send should match up with the first recv */
   CQ_EXPECT_COMPLETION(cqv, tag(103), true);
-  CQ_EXPECT_COMPLETION(cqv, tag(4), true);
   cq_verify(cqv);
 
   /* and the next recv should be ready immediately also */
@@ -204,6 +203,9 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
   error = grpc_call_start_batch(s, ops, (size_t)(op - ops), tag(104), NULL);
   GPR_ASSERT(GRPC_CALL_OK == error);
 
+  /* The send with tag(4) might not complete until now since 104 is its matching
+   * recv */
+  CQ_EXPECT_COMPLETION(cqv, tag(4), true);
   CQ_EXPECT_COMPLETION(cqv, tag(104), true);
   cq_verify(cqv);
 
@@ -220,7 +222,7 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
   op->flags = 0;
   op->reserved = NULL;
   op++;
-  error = grpc_call_start_batch(c, ops, (size_t)(op - ops), tag(4), NULL);
+  error = grpc_call_start_batch(c, ops, (size_t)(op - ops), tag(5), NULL);
 
   memset(ops, 0, sizeof(ops));
   op = ops;
@@ -241,7 +243,7 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
   GPR_ASSERT(GRPC_CALL_OK == error);
 
   CQ_EXPECT_COMPLETION(cqv, tag(105), 1);
-  CQ_EXPECT_COMPLETION(cqv, tag(4), 1);
+  CQ_EXPECT_COMPLETION(cqv, tag(5), 1);
   cq_verify(cqv);
 
   GPR_ASSERT(status == GRPC_STATUS_OK);
