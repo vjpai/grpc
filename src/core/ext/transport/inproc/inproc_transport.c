@@ -564,7 +564,7 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
 
   inproc_stream *other = s->other_side;
   if (s->send_message_op) {
-    if (other->recv_message_op) {
+    if (other && other->recv_message_op) {
       message_transfer_locked(exec_ctx, s, other);
     }
   }
@@ -622,7 +622,7 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     }
   }
   if (s->recv_message_op) {
-    if (other->send_message_op) {
+    if (other && other->send_message_op) {
       message_transfer_locked(exec_ctx, other, s);
     }
   }
