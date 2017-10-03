@@ -922,7 +922,8 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
           needs_close = true;
         }
       }
-      if (other != NULL && other->recv_trailing_md_op &&
+      if (other != NULL &&
+          (other->recv_trailing_md_op || other->recv_message_op) &&
           !other->op_closure_scheduled) {
         GRPC_CLOSURE_SCHED(exec_ctx, &other->op_closure, error);
         other->op_closure_scheduled = true;
@@ -957,7 +958,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     if ((op->send_message && (s->other_side->recv_message_op != NULL)) ||
         (op->recv_initial_metadata && s->to_read_initial_md_filled) ||
         (op->recv_message && (s->other_side->send_message_op != NULL)) ||
-        (s->to_read_trailing_md_filled)) {
+        (s->to_read_trailing_md_filled || s->trailing_md_recvd)) {
       if (!s->op_closure_scheduled) {
         GRPC_CLOSURE_SCHED(exec_ctx, &s->op_closure, GRPC_ERROR_NONE);
         s->op_closure_scheduled = true;
