@@ -362,7 +362,9 @@ static void close_other_side_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
 }
 
 static void complete_if_unique_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
-                                      grpc_error *error, grpc_transport_stream_op_batch *op, const char* msg) {
+                                      grpc_error *error,
+                                      grpc_transport_stream_op_batch *op,
+                                      const char *msg) {
   int is_sm = (int)(op == s->send_message_op);
   int is_rim = (int)(op == s->recv_initial_md_op);
   int is_rm = (int)(op == s->recv_message_op);
@@ -450,8 +452,9 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
                        err);
     // Last use of err so no need to REF and then UNREF it
 
-    complete_if_unique_locked(exec_ctx, s, error, s->recv_initial_md_op,
-                              "fail_helper scheduling recv-initial-metadata-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, error, s->recv_initial_md_op,
+        "fail_helper scheduling recv-initial-metadata-on-complete");
     s->recv_initial_md_op = NULL;
   }
   if (s->recv_message_op) {
@@ -460,21 +463,24 @@ static void fail_helper_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     GRPC_CLOSURE_SCHED(
         exec_ctx, s->recv_message_op->payload->recv_message.recv_message_ready,
         GRPC_ERROR_REF(error));
-    complete_if_unique_locked(exec_ctx, s, error, s->recv_message_op,
-                              "fail_helper scheduling recv-message-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, error, s->recv_message_op,
+        "fail_helper scheduling recv-message-on-complete");
     s->recv_message_op = NULL;
   }
   if (s->send_message_op) {
-    complete_if_unique_locked(exec_ctx, s, error, s->send_message_op,
-                              "fail_helper scheduling send-message-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, error, s->send_message_op,
+        "fail_helper scheduling send-message-on-complete");
     s->send_message_op = NULL;
   }
   if (s->recv_trailing_md_op) {
     INPROC_LOG(GPR_DEBUG,
                "fail_helper %p scheduling trailing-md-on-complete %p", s,
                error);
-    complete_if_unique_locked(exec_ctx, s, error, s->recv_trailing_md_op,
-                              "fail_helper scheduling recv-trailing-metadata-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, error, s->recv_trailing_md_op,
+        "fail_helper scheduling recv-trailing-metadata-on-complete");
     s->recv_trailing_md_op = NULL;
   }
   close_other_side_locked(exec_ctx, s, "fail_helper:other_side");
@@ -517,9 +523,11 @@ static void message_transfer_locked(grpc_exec_ctx *exec_ctx,
       exec_ctx,
       receiver->recv_message_op->payload->recv_message.recv_message_ready,
       GRPC_ERROR_NONE);
-  complete_if_unique_locked(exec_ctx, sender, GRPC_ERROR_NONE, sender->send_message_op,
+  complete_if_unique_locked(exec_ctx, sender, GRPC_ERROR_NONE,
+                            sender->send_message_op,
                             "message_transfer scheduling sender on_complete");
-  complete_if_unique_locked(exec_ctx, receiver, GRPC_ERROR_NONE, receiver->recv_message_op,
+  complete_if_unique_locked(exec_ctx, receiver, GRPC_ERROR_NONE,
+                            receiver->recv_message_op,
                             "message_transfer scheduling receiver on_complete");
 
   receiver->recv_message_op = NULL;
@@ -594,8 +602,9 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
                          s->recv_initial_md_op->payload->recv_initial_metadata
                              .recv_initial_metadata_ready,
                          GRPC_ERROR_REF(new_err));
-      complete_if_unique_locked(exec_ctx, s, new_err, s->recv_initial_md_op,
-                                "op_state_machine scheduling recv-initial-metadata-on-complete");
+      complete_if_unique_locked(
+          exec_ctx, s, new_err, s->recv_initial_md_op,
+          "op_state_machine scheduling recv-initial-metadata-on-complete");
       s->recv_initial_md_op = NULL;
 
       if (new_err != GRPC_ERROR_NONE) {
@@ -632,8 +641,9 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
           exec_ctx,
           s->recv_message_op->payload->recv_message.recv_message_ready,
           GRPC_ERROR_NONE);
-      complete_if_unique_locked(exec_ctx, s, new_err, s->recv_message_op,
-                                "op_state_machine scheduling recv-message-on-complete");
+      complete_if_unique_locked(
+          exec_ctx, s, new_err, s->recv_message_op,
+          "op_state_machine scheduling recv-message-on-complete");
       s->recv_message_op = NULL;
     }
     if (s->recv_trailing_md_op != NULL) {
@@ -679,15 +689,17 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     GRPC_CLOSURE_SCHED(
         exec_ctx, s->recv_message_op->payload->recv_message.recv_message_ready,
         GRPC_ERROR_NONE);
-    complete_if_unique_locked(exec_ctx, s, new_err, s->recv_message_op,
-                              "op_state_machine scheduling recv-message-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, new_err, s->recv_message_op,
+        "op_state_machine scheduling recv-message-on-complete");
     s->recv_message_op = NULL;
   }
   if (s->trailing_md_recvd && s->trailing_md_sent && s->send_message_op) {
     // Nothing further will try to receive from this stream, so finish off
     // any outstanding send_message op
-    complete_if_unique_locked(exec_ctx, s, new_err, s->send_message_op,
-                              "op_state_machine scheduling send-message-on-complete");
+    complete_if_unique_locked(
+        exec_ctx, s, new_err, s->send_message_op,
+        "op_state_machine scheduling send-message-on-complete");
     s->send_message_op = NULL;
   }
   if (s->send_message_op || s->recv_initial_md_op || s->recv_message_op ||

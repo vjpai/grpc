@@ -198,7 +198,7 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
    * transport won't complete the send until it actually matches a receive.
    * However, we must clear the recv with tag(103) before we can issue the
    * receive with tag(104) */
-  
+
   int tags_ending_with_4_needed = 2;
   bool got_tag_103 = false;
   while (!got_tag_103) {
@@ -221,7 +221,7 @@ static void test_invoke_request_with_payload(grpc_end2end_test_config config) {
       abort();
     }
   }
-  
+
   /* and the next recv should be ready immediately also */
   memset(ops, 0, sizeof(ops));
   op = ops;
