@@ -582,10 +582,16 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
       maybe_schedule_op_closure_locked(exec_ctx, other, GRPC_ERROR_NONE);
     }
   }
+  // Pause a send trailing metadata if there is still an outstanding
+  // send message unless we know that the send message will never get
+  // matched to a receive This happens on the client if the server has
+  // already sent status (trailing md) or on the server if the client
+  // has sent trailing metadata that we actually wanted
   if (s->send_trailing_md_op &&
-      (!s->send_message_op || (s->t->is_client &&
-			       (s->to_read_trailing_md_filled ||
-				s->trailing_md_recvd)))) {
+      (!s->send_message_op ||
+       s->trailing_md_recvd || 
+       (s->to_read_trailing_md_filled && (s->t->is_client ||
+					  s->recv_trailing_md_op)))) {
     grpc_metadata_batch *dest = (other == NULL) ? &s->write_buffer_trailing_md
                                                 : &other->to_read_trailing_md;
     bool *destfilled = (other == NULL) ? &s->write_buffer_trailing_md_filled
