@@ -606,7 +606,7 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
       s->trailing_md_sent = true;
       if (!s->t->is_client && s->trailing_md_recvd && s->recv_trailing_md_op) {
         INPROC_LOG(GPR_DEBUG,
-                   "perform_stream_op %p scheduling trailing-md-on-complete",
+                   "op_state_machine %p scheduling trailing-md-on-complete",
                    s);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                            GRPC_ERROR_NONE);
@@ -869,7 +869,8 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     // already self-canceled so still give it an error
     error = GRPC_ERROR_REF(s->cancel_self_error);
   } else {
-    INPROC_LOG(GPR_DEBUG, "perform_stream_op %p%s%s%s%s%s%s", s,
+    INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %s%s%s%s%s%s%s", s,
+	       s->t->is_client ? "client" : "server",
                op->send_initial_metadata ? " send_initial_metadata" : "",
                op->send_message ? " send_message" : "",
                op->send_trailing_metadata ? " send_trailing_metadata" : "",
