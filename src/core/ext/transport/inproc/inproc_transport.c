@@ -588,10 +588,9 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
   // already sent status (trailing md) or on the server if the client
   // has sent trailing metadata that we actually wanted
   if (s->send_trailing_md_op &&
-      (!s->send_message_op ||
-       s->trailing_md_recvd || 
-       (s->to_read_trailing_md_filled && (s->t->is_client ||
-					  s->recv_trailing_md_op)))) {
+      (!s->send_message_op || s->trailing_md_recvd ||
+       (s->to_read_trailing_md_filled &&
+        (s->t->is_client || s->recv_trailing_md_op)))) {
     grpc_metadata_batch *dest = (other == NULL) ? &s->write_buffer_trailing_md
                                                 : &other->to_read_trailing_md;
     bool *destfilled = (other == NULL) ? &s->write_buffer_trailing_md_filled
@@ -612,8 +611,7 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
       s->trailing_md_sent = true;
       if (!s->t->is_client && s->trailing_md_recvd && s->recv_trailing_md_op) {
         INPROC_LOG(GPR_DEBUG,
-                   "op_state_machine %p scheduling trailing-md-on-complete",
-                   s);
+                   "op_state_machine %p scheduling trailing-md-on-complete", s);
         GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
                            GRPC_ERROR_NONE);
         s->recv_trailing_md_op = NULL;
@@ -826,9 +824,9 @@ static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     // couldn't complete that because we hadn't yet sent out trailing
     // md, now's the chance
     if (!s->t->is_client && s->trailing_md_recvd && s->recv_trailing_md_op) {
-      complete_if_unique_locked(exec_ctx, s, s->cancel_self_error,
-				s->recv_trailing_md_op,
-				"cancel_stream scheduling trailing-md-on-complete");
+      complete_if_unique_locked(
+          exec_ctx, s, s->cancel_self_error, s->recv_trailing_md_op,
+          "cancel_stream scheduling trailing-md-on-complete");
       s->recv_trailing_md_op = NULL;
     }
   }
@@ -874,7 +872,7 @@ static void perform_stream_op(grpc_exec_ctx *exec_ctx, grpc_transport *gt,
     error = GRPC_ERROR_REF(s->cancel_self_error);
   } else {
     INPROC_LOG(GPR_DEBUG, "perform_stream_op %p %s%s%s%s%s%s%s", s,
-	       s->t->is_client ? "client" : "server",
+               s->t->is_client ? "client" : "server",
                op->send_initial_metadata ? " send_initial_metadata" : "",
                op->send_message ? " send_message" : "",
                op->send_trailing_metadata ? " send_trailing_metadata" : "",
