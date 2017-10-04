@@ -583,8 +583,9 @@ static void op_state_machine(grpc_exec_ctx *exec_ctx, void *arg,
     }
   }
   if (s->send_trailing_md_op &&
-      (!s->send_message_op || s->to_read_trailing_md_filled ||
-       s->trailing_md_recvd)) {
+      (!s->send_message_op || (s->t->is_client &&
+			       (s->to_read_trailing_md_filled ||
+				s->trailing_md_recvd)))) {
     grpc_metadata_batch *dest = (other == NULL) ? &s->write_buffer_trailing_md
                                                 : &other->to_read_trailing_md;
     bool *destfilled = (other == NULL) ? &s->write_buffer_trailing_md_filled
