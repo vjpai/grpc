@@ -820,11 +820,9 @@ static bool cancel_stream_locked(grpc_exec_ctx *exec_ctx, inproc_stream *s,
     // couldn't complete that because we hadn't yet sent out trailing
     // md, now's the chance
     if (!s->t->is_client && s->trailing_md_recvd && s->recv_trailing_md_op) {
-      INPROC_LOG(GPR_DEBUG,
-                 "cancel_stream %p scheduling trailing-md-on-complete %p", s,
-                 s->cancel_self_error);
-      GRPC_CLOSURE_SCHED(exec_ctx, s->recv_trailing_md_op->on_complete,
-                         GRPC_ERROR_REF(s->cancel_self_error));
+      complete_if_unique_locked(exec_ctx, s, s->cancel_self_error,
+				s->recv_trailing_md_op,
+				"cancel_stream scheduling trailing-md-on-complete");
       s->recv_trailing_md_op = NULL;
     }
   }
