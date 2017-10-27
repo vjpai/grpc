@@ -167,29 +167,8 @@ class ClientReaderFactory {
     return new ClientReader<R>(channel, method, context, request);
   }
 };
-
-template <class W>
-class ClientWriterFactory {
- public:
-  template <class R>
-    static ClientWriter<W>* Create(::grpc::ChannelInterface* channel,
-				      const ::grpc::internal::RpcMethod& method,
-				      ClientContext* context, R* response) {
-    return new ClientWriter<W>(channel, method, context, response);
-  }
-};
-
-template <class W, class R>
-class ClientReaderWriterFactory {
- public:
-  static ClientReaderWriter<W,R>* Create(::grpc::ChannelInterface* channel,
-					const ::grpc::internal::RpcMethod& method,
-					ClientContext* context) {
-    return new ClientReaderWriter<W,R>(channel, method, context);
-  }
-};
 }  // namespace internal
- 
+
 /// Synchronous (blocking) client-side API for doing server-streaming RPCs,
 /// where the stream of messages coming from the server has messages
 /// of type \a R.
@@ -295,6 +274,19 @@ class ClientWriterInterface : public internal::ClientStreamingInterface,
   /// \return Whether the writes were successful.
   virtual bool WritesDone() = 0;
 };
+
+namespace internal {
+template <class W>
+class ClientWriterFactory {
+ public:
+  template <class R>
+    static ClientWriter<W>* Create(::grpc::ChannelInterface* channel,
+				      const ::grpc::internal::RpcMethod& method,
+				      ClientContext* context, R* response) {
+    return new ClientWriter<W>(channel, method, context, response);
+  }
+};
+}  // namespace internal
 
 /// Synchronous (blocking) client-side API for doing client-streaming RPCs,
 /// where the outgoing message stream coming from the client has messages of
@@ -435,6 +427,18 @@ class ClientReaderWriterInterface : public internal::ClientStreamingInterface,
   virtual bool WritesDone() = 0;
 };
 
+namespace internal {
+template <class W, class R>
+class ClientReaderWriterFactory {
+ public:
+  static ClientReaderWriter<W,R>* Create(::grpc::ChannelInterface* channel,
+					const ::grpc::internal::RpcMethod& method,
+					ClientContext* context) {
+    return new ClientReaderWriter<W,R>(channel, method, context);
+  }
+};
+}  // namespace internal
+ 
 /// Synchronous (blocking) client-side API for bi-directional streaming RPCs,
 /// where the outgoing message stream coming from the client has messages of
 /// type \a W, and the incoming messages stream coming from the server has
