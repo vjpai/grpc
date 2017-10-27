@@ -1216,7 +1216,7 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                    "::grpc::ClientContext* context, $Response$* response) {\n");
     printer->Print(
         *vars,
-        "  return ::grpc::ClientWriter< $Request$>::internal::Create("
+        "  return ::grpc::internal::ClientWriterFactory< $Request$>::Create("
         "channel_.get(), "
         "rpcmethod_$Method$_, "
         "context, response);\n"
@@ -1247,7 +1247,7 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
         "::grpc::ClientContext* context, const $Request$& request) {\n");
     printer->Print(
         *vars,
-        "  return ::grpc::ClientReader< $Response$>::internal::Create("
+        "  return ::grpc::internal::ClientReaderFactory< $Response$>::Create("
         "channel_.get(), "
         "rpcmethod_$Method$_, "
         "context, request);\n"
@@ -1277,8 +1277,8 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
         "::grpc::ClientReaderWriter< $Request$, $Response$>* "
         "$ns$$Service$::Stub::$Method$Raw(::grpc::ClientContext* context) {\n");
     printer->Print(*vars,
-                   "  return ::grpc::ClientReaderWriter< "
-                   "$Request$, $Response$>::internal::Create("
+                   "  return ::grpc::internal::ClientReaderWriterFactory< "
+		   "$Request$, $Response$>::Create("
                    "channel_.get(), "
                    "rpcmethod_$Method$_, "
                    "context);\n"
