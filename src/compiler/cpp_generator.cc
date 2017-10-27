@@ -1203,8 +1203,8 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
       printer->Print(
           *vars,
           "  return "
-          "::grpc::ClientAsyncResponseReader< $Response$>::internal::Create("
-          "channel_.get(), cq, "
+          "::grpc::internal::ClientAsyncResponseReaderFactory< $Response$>"
+          "::Create(channel_.get(), cq, "
           "rpcmethod_$Method$_, "
           "context, request, $AsyncStart$);\n"
           "}\n\n");

@@ -40,8 +40,6 @@ template <class W>
 class ClientAsyncWriter;
 template <class W, class R>
 class ClientAsyncReaderWriter;
-template <class R>
-class ClientAsyncResponseReader;
 
 namespace internal {
 class Call;
@@ -49,6 +47,8 @@ class CallOpSetInterface;
 class RpcMethod;
 template <class InputMessage, class OutputMessage>
 class BlockingUnaryCallImpl;
+template <class R>
+class ClientAsyncResponseReaderFactory;
 }  // namespace internal
 
 /// Codegen interface for \a grpc::Channel.
@@ -100,7 +100,7 @@ class ChannelInterface {
   template <class W, class R>
   friend class ::grpc::ClientAsyncReaderWriter;
   template <class R>
-  friend class ::grpc::ClientAsyncResponseReader;
+  friend class ::grpc::internal::ClientAsyncResponseReaderFactory;
   template <class InputMessage, class OutputMessage>
   friend class ::grpc::internal::BlockingUnaryCallImpl;
   friend class ::grpc::internal::RpcMethod;
