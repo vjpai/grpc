@@ -34,12 +34,6 @@ template <class W>
 class ClientWriter;
 template <class W, class R>
 class ClientReaderWriter;
-template <class R>
-class ClientAsyncReader;
-template <class W>
-class ClientAsyncWriter;
-template <class W, class R>
-class ClientAsyncReaderWriter;
 
 namespace internal {
 class Call;
@@ -47,6 +41,12 @@ class CallOpSetInterface;
 class RpcMethod;
 template <class InputMessage, class OutputMessage>
 class BlockingUnaryCallImpl;
+template <class R>
+class ClientAsyncReaderFactory;
+template <class W>
+class ClientAsyncWriterFactory;
+template <class W, class R>
+class ClientAsyncReaderWriterFactory;
 template <class R>
 class ClientAsyncResponseReaderFactory;
 }  // namespace internal
@@ -94,11 +94,11 @@ class ChannelInterface {
   template <class W, class R>
   friend class ::grpc::ClientReaderWriter;
   template <class R>
-  friend class ::grpc::ClientAsyncReader;
+    friend class ::grpc::internal::ClientAsyncReaderFactory;
   template <class W>
-  friend class ::grpc::ClientAsyncWriter;
+  friend class ::grpc::internal::ClientAsyncWriterFactory;
   template <class W, class R>
-  friend class ::grpc::ClientAsyncReaderWriter;
+  friend class ::grpc::internal::ClientAsyncReaderWriterFactory;
   template <class R>
   friend class ::grpc::internal::ClientAsyncResponseReaderFactory;
   template <class InputMessage, class OutputMessage>

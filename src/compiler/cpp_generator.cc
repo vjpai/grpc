@@ -1233,8 +1233,8 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                      "::grpc::CompletionQueue* cq$AsyncMethodParams$) {\n");
       printer->Print(
           *vars,
-          "  return ::grpc::ClientAsyncWriter< $Request$>::internal::Create("
-          "channel_.get(), cq, "
+          "  return ::grpc::internal::ClientAsyncWriterFactory< $Request$>"
+	  "::Create(channel_.get(), cq, "
           "rpcmethod_$Method$_, "
           "context, response, $AsyncStart$$AsyncCreateArgs$);\n"
           "}\n\n");
@@ -1265,8 +1265,8 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
           "::grpc::CompletionQueue* cq$AsyncMethodParams$) {\n");
       printer->Print(
           *vars,
-          "  return ::grpc::ClientAsyncReader< $Response$>::internal::Create("
-          "channel_.get(), cq, "
+          "  return ::grpc::internal::ClientAsyncReaderFactory< $Response$>"
+	  "::Create(channel_.get(), cq, "
           "rpcmethod_$Method$_, "
           "context, request, $AsyncStart$$AsyncCreateArgs$);\n"
           "}\n\n");
@@ -1295,8 +1295,8 @@ void PrintSourceClientMethod(grpc_generator::Printer *printer,
                      "::grpc::CompletionQueue* cq$AsyncMethodParams$) {\n");
       printer->Print(*vars,
                      "  return "
-                     "::grpc::ClientAsyncReaderWriter< $Request$, "
-                     "$Response$>::internal::Create("
+                     "::grpc::internal::ClientAsyncReaderWriterFactory< "
+		     "$Request$, $Response$>::Create("
                      "channel_.get(), cq, "
                      "rpcmethod_$Method$_, "
                      "context, $AsyncStart$$AsyncCreateArgs$);\n"
