@@ -161,9 +161,9 @@ template <class R>
 class ClientReaderFactory {
  public:
   template <class W>
-    static ClientReader<R>* Create(ChannelInterface* channel,
-                                const ::grpc::internal::RpcMethod& method,
-                                ClientContext* context, const W& request) {
+  static ClientReader<R>* Create(ChannelInterface* channel,
+                                 const ::grpc::internal::RpcMethod& method,
+                                 ClientContext* context, const W& request) {
     return new ClientReader<R>(channel, method, context, request);
   }
 };
@@ -279,9 +279,9 @@ template <class W>
 class ClientWriterFactory {
  public:
   template <class R>
-    static ClientWriter<W>* Create(::grpc::ChannelInterface* channel,
-				      const ::grpc::internal::RpcMethod& method,
-				      ClientContext* context, R* response) {
+  static ClientWriter<W>* Create(::grpc::ChannelInterface* channel,
+                                 const ::grpc::internal::RpcMethod& method,
+                                 ClientContext* context, R* response) {
     return new ClientWriter<W>(channel, method, context, response);
   }
 };
@@ -429,14 +429,14 @@ namespace internal {
 template <class W, class R>
 class ClientReaderWriterFactory {
  public:
-  static ClientReaderWriter<W,R>* Create(::grpc::ChannelInterface* channel,
-					const ::grpc::internal::RpcMethod& method,
-					ClientContext* context) {
-    return new ClientReaderWriter<W,R>(channel, method, context);
+  static ClientReaderWriter<W, R>* Create(
+      ::grpc::ChannelInterface* channel,
+      const ::grpc::internal::RpcMethod& method, ClientContext* context) {
+    return new ClientReaderWriter<W, R>(channel, method, context);
   }
 };
 }  // namespace internal
- 
+
 /// Synchronous (blocking) client-side API for bi-directional streaming RPCs,
 /// where the outgoing message stream coming from the client has messages of
 /// type \a W, and the incoming messages stream coming from the server has
@@ -537,7 +537,7 @@ class ClientReaderWriter final : public ClientReaderWriterInterface<W, R> {
   }
 
  private:
-  friend class internal::ClientReaderWriterFactory<W,R>;
+  friend class internal::ClientReaderWriterFactory<W, R>;
 
   ClientContext* context_;
   CompletionQueue cq_;

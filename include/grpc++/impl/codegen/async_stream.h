@@ -164,26 +164,26 @@ template <class R>
 class ClientAsyncReaderFactory {
  public:
   /// Create a stream object.
-    /// Write the first request out if \a start is set.
-    /// \a tag will be notified on \a cq when the call has been started and
-    /// \a request has been written out. If \a start is not set, \a tag must be
-    /// nullptr and the actual call must be initiated by StartCall
-    /// Note that \a context will be used to fill in custom initial metadata
-    /// used to send to the server when starting the call.
-    template <class W>
-    static ClientAsyncReader<R>* Create(ChannelInterface* channel,
-                                     CompletionQueue* cq,
-                                     const ::grpc::internal::RpcMethod& method,
-                                     ClientContext* context, const W& request,
-                                     bool start, void* tag) {
-      ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
-      return new (g_core_codegen_interface->grpc_call_arena_alloc(
-          call.call(), sizeof(ClientAsyncReader<R>)))
-          ClientAsyncReader<R>(call, context, request, start, tag);
-    }
+  /// Write the first request out if \a start is set.
+  /// \a tag will be notified on \a cq when the call has been started and
+  /// \a request has been written out. If \a start is not set, \a tag must be
+  /// nullptr and the actual call must be initiated by StartCall
+  /// Note that \a context will be used to fill in custom initial metadata
+  /// used to send to the server when starting the call.
+  template <class W>
+  static ClientAsyncReader<R>* Create(ChannelInterface* channel,
+                                      CompletionQueue* cq,
+                                      const ::grpc::internal::RpcMethod& method,
+                                      ClientContext* context, const W& request,
+                                      bool start, void* tag) {
+    ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
+    return new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call.call(), sizeof(ClientAsyncReader<R>)))
+        ClientAsyncReader<R>(call, context, request, start, tag);
+  }
 };
-}  // namespace internal   
- 
+}  // namespace internal
+
 /// Async client-side API for doing server-streaming RPCs,
 /// where the incoming message stream coming from the server has
 /// messages of type \a R.
@@ -300,31 +300,31 @@ namespace internal {
 template <class W>
 class ClientAsyncWriterFactory {
  public:
-    /// Create a stream object.
-    /// Start the RPC if \a start is set
-    /// \a tag will be notified on \a cq when the call has been started (i.e.
-    /// intitial metadata sent) and \a request has been written out.
-    /// If \a start is not set, \a tag must be nullptr and the actual call
-    /// must be initiated by StartCall
-    /// Note that \a context will be used to fill in custom initial metadata
-    /// used to send to the server when starting the call.
-    /// \a response will be filled in with the single expected response
-    /// message from the server upon a successful call to the \a Finish
-    /// method of this instance.
-    template <class R>
-    static ClientAsyncWriter<W>* Create(ChannelInterface* channel,
-                                     CompletionQueue* cq,
-                                     const ::grpc::internal::RpcMethod& method,
-                                     ClientContext* context, R* response,
-                                     bool start, void* tag) {
-      ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
-      return new (g_core_codegen_interface->grpc_call_arena_alloc(
-          call.call(), sizeof(ClientAsyncWriter<W>)))
-          ClientAsyncWriter<W>(call, context, response, start, tag);
-    }
+  /// Create a stream object.
+  /// Start the RPC if \a start is set
+  /// \a tag will be notified on \a cq when the call has been started (i.e.
+  /// intitial metadata sent) and \a request has been written out.
+  /// If \a start is not set, \a tag must be nullptr and the actual call
+  /// must be initiated by StartCall
+  /// Note that \a context will be used to fill in custom initial metadata
+  /// used to send to the server when starting the call.
+  /// \a response will be filled in with the single expected response
+  /// message from the server upon a successful call to the \a Finish
+  /// method of this instance.
+  template <class R>
+  static ClientAsyncWriter<W>* Create(ChannelInterface* channel,
+                                      CompletionQueue* cq,
+                                      const ::grpc::internal::RpcMethod& method,
+                                      ClientContext* context, R* response,
+                                      bool start, void* tag) {
+    ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
+    return new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call.call(), sizeof(ClientAsyncWriter<W>)))
+        ClientAsyncWriter<W>(call, context, response, start, tag);
+  }
 };
-}  // namespace internal   
- 
+}  // namespace internal
+
 /// Async API on the client side for doing client-streaming RPCs,
 /// where the outgoing message stream going to the server contains
 /// messages of type \a W.
@@ -463,26 +463,26 @@ namespace internal {
 template <class W, class R>
 class ClientAsyncReaderWriterFactory {
  public:
-    /// Create a stream object.
-    /// Start the RPC request if \a start is set.
-    /// \a tag will be notified on \a cq when the call has been started (i.e.
-    /// intitial metadata sent). If \a start is not set, \a tag must be
-    /// nullptr and the actual call must be initiated by StartCall
-    /// Note that \a context will be used to fill in custom initial metadata
-    /// used to send to the server when starting the call.
-  static ClientAsyncReaderWriter<W,R>* Create(
-        ChannelInterface* channel, CompletionQueue* cq,
-        const ::grpc::internal::RpcMethod& method, ClientContext* context,
-        bool start, void* tag) {
-      ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
+  /// Create a stream object.
+  /// Start the RPC request if \a start is set.
+  /// \a tag will be notified on \a cq when the call has been started (i.e.
+  /// intitial metadata sent). If \a start is not set, \a tag must be
+  /// nullptr and the actual call must be initiated by StartCall
+  /// Note that \a context will be used to fill in custom initial metadata
+  /// used to send to the server when starting the call.
+  static ClientAsyncReaderWriter<W, R>* Create(
+      ChannelInterface* channel, CompletionQueue* cq,
+      const ::grpc::internal::RpcMethod& method, ClientContext* context,
+      bool start, void* tag) {
+    ::grpc::internal::Call call = channel->CreateCall(method, context, cq);
 
-      return new (g_core_codegen_interface->grpc_call_arena_alloc(
-								  call.call(), sizeof(ClientAsyncReaderWriter<W,R>)))
-	ClientAsyncReaderWriter<W,R>(call, context, start, tag);
-    }
+    return new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call.call(), sizeof(ClientAsyncReaderWriter<W, R>)))
+        ClientAsyncReaderWriter<W, R>(call, context, start, tag);
+  }
 };
-}  // namespace internal   
- 
+}  // namespace internal
+
 /// Async client-side interface for bi-directional streaming,
 /// where the outgoing message stream going to the server
 /// has messages of type \a W,  and the incoming message stream coming
@@ -570,7 +570,7 @@ class ClientAsyncReaderWriter final
   }
 
  private:
-  friend class internal::ClientAsyncReaderWriterFactory<W,R>;
+  friend class internal::ClientAsyncReaderWriterFactory<W, R>;
   ClientAsyncReaderWriter(::grpc::internal::Call call, ClientContext* context,
                           bool start, void* tag)
       : context_(context), call_(call), started_(start) {

@@ -94,7 +94,7 @@ class ChannelInterface {
   template <class W, class R>
   friend class ::grpc::ClientReaderWriter;
   template <class R>
-    friend class ::grpc::internal::ClientAsyncReaderFactory;
+  friend class ::grpc::internal::ClientAsyncReaderFactory;
   template <class W>
   friend class ::grpc::internal::ClientAsyncWriterFactory;
   template <class W, class R>
