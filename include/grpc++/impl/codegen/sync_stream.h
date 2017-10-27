@@ -229,8 +229,7 @@ class ClientReader final : public ClientReaderInterface<R> {
   }
 
  private:
-  template <class R1>
-  friend class internal::ClientReaderFactory;
+  friend class internal::ClientReaderFactory<R>;
   ClientContext* context_;
   CompletionQueue cq_;
   ::grpc::internal::Call call_;
@@ -365,8 +364,7 @@ class ClientWriter : public ClientWriterInterface<W> {
   }
 
  private:
-  template <class W1>
-  friend class internal::ClientWriterFactory;
+  friend class internal::ClientWriterFactory<W>;
 
   /// Block to create a stream (i.e. send request headers and other initial
   /// metadata to the server). Note that \a context will be used to fill
@@ -539,8 +537,7 @@ class ClientReaderWriter final : public ClientReaderWriterInterface<W, R> {
   }
 
  private:
-  template <class W1, class R1>
-  friend class internal::ClientReaderWriterFactory;
+  friend class internal::ClientReaderWriterFactory<W,R>;
 
   ClientContext* context_;
   CompletionQueue cq_;
