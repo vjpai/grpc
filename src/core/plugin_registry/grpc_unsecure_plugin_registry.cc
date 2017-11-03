@@ -38,8 +38,6 @@ extern "C" void grpc_resolver_fake_init(void);
 extern "C" void grpc_resolver_fake_shutdown(void);
 extern "C" void grpc_server_load_reporting_plugin_init(void);
 extern "C" void grpc_server_load_reporting_plugin_shutdown(void);
-extern "C" void grpc_lb_policy_grpclb_init(void);
-extern "C" void grpc_lb_policy_grpclb_shutdown(void);
 extern "C" void grpc_lb_policy_pick_first_init(void);
 extern "C" void grpc_lb_policy_pick_first_shutdown(void);
 extern "C" void grpc_lb_policy_round_robin_init(void);
@@ -72,8 +70,6 @@ void grpc_register_built_in_plugins(void) {
                        grpc_resolver_fake_shutdown);
   grpc_register_plugin(grpc_server_load_reporting_plugin_init,
                        grpc_server_load_reporting_plugin_shutdown);
-  grpc_register_plugin(grpc_lb_policy_grpclb_init,
-                       grpc_lb_policy_grpclb_shutdown);
   grpc_register_plugin(grpc_lb_policy_pick_first_init,
                        grpc_lb_policy_pick_first_shutdown);
   grpc_register_plugin(grpc_lb_policy_round_robin_init,

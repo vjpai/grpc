@@ -6048,7 +6048,6 @@
       "gpr", 
       "grpc_base", 
       "grpc_deadline_filter", 
-      "grpc_lb_policy_grpclb", 
       "grpc_lb_policy_pick_first", 
       "grpc_lb_policy_round_robin", 
       "grpc_max_age_filter", 
