@@ -425,7 +425,7 @@ static grpc_resolver_factory *dns_ares_resolver_factory_create() {
 }
 
 extern "C" void grpc_resolver_dns_ares_init(void) {
-  gpr_log(GPR_ERROR, "Called into Ares!");
+#error on wrong path for ares
   char *resolver = gpr_getenv("GRPC_DNS_RESOLVER");
   /* TODO(zyc): Turn on c-ares based resolver by default after the address
      sorter and the CNAME support are added. */
@@ -442,7 +442,7 @@ extern "C" void grpc_resolver_dns_ares_init(void) {
 }
 
 extern "C" void grpc_resolver_dns_ares_shutdown(void) {
-  gpr_log(GPR_ERROR, "Called into Ares!");
+#error on wrong path for ares
   char *resolver = gpr_getenv("GRPC_DNS_RESOLVER");
   if (resolver != NULL && gpr_stricmp(resolver, "ares") == 0) {
     grpc_ares_cleanup();
