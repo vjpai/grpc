@@ -1113,7 +1113,6 @@
         'src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper_fallback.cc',
         'src/core/ext/filters/client_channel/resolver/dns/native/dns_resolver.cc',
         'src/core/ext/filters/client_channel/resolver/sockaddr/sockaddr_resolver.cc',
-        'src/core/ext/filters/client_channel/resolver/fake/fake_resolver.cc',
         'src/core/ext/filters/load_reporting/server_load_reporting_filter.cc',
         'src/core/ext/filters/load_reporting/server_load_reporting_plugin.cc',
         'src/core/ext/filters/client_channel/lb_policy/pick_first/pick_first.cc',

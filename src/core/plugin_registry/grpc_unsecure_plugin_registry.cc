@@ -34,8 +34,6 @@ extern "C" void grpc_resolver_dns_native_init(void);
 extern "C" void grpc_resolver_dns_native_shutdown(void);
 extern "C" void grpc_resolver_sockaddr_init(void);
 extern "C" void grpc_resolver_sockaddr_shutdown(void);
-extern "C" void grpc_resolver_fake_init(void);
-extern "C" void grpc_resolver_fake_shutdown(void);
 extern "C" void grpc_server_load_reporting_plugin_init(void);
 extern "C" void grpc_server_load_reporting_plugin_shutdown(void);
 extern "C" void grpc_lb_policy_pick_first_init(void);
@@ -66,8 +64,6 @@ void grpc_register_built_in_plugins(void) {
                        grpc_resolver_dns_native_shutdown);
   grpc_register_plugin(grpc_resolver_sockaddr_init,
                        grpc_resolver_sockaddr_shutdown);
-  grpc_register_plugin(grpc_resolver_fake_init,
-                       grpc_resolver_fake_shutdown);
   grpc_register_plugin(grpc_server_load_reporting_plugin_init,
                        grpc_server_load_reporting_plugin_shutdown);
   grpc_register_plugin(grpc_lb_policy_pick_first_init,
