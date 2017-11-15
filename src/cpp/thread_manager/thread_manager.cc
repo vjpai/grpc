@@ -20,18 +20,26 @@
 
 #include <climits>
 #include <mutex>
-#include <thread>
 
 #include <grpc/support/log.h>
+#include <grpc/support/thd.h>
 
 namespace grpc {
 
-ThreadManager::WorkerThread::WorkerThread(ThreadManager* thd_mgr)
+ThreadManager::WorkerThread::WorkerThread(ThreadManager* thd_mgr, bool* valid)
     : thd_mgr_(thd_mgr) {
+  gpr_thd_options opt = gpr_thd_options_default();
+  gpr_thd_options_set_joinable(&opt);
+
   // Make thread creation exclusive with respect to its join happening in
   // ~WorkerThread().
   std::lock_guard<std::mutex> lock(wt_mu_);
-  thd_ = std::thread(&ThreadManager::WorkerThread::Run, this);
+  *valid = valid_ =
+      gpr_thd_new(&thd_, "worker thread",
+                  [](void* th) {
+                    reinterpret_cast<ThreadManager::WorkerThread*>(th)->Run();
+                  },
+                  this, &opt);
 }
 
 void ThreadManager::WorkerThread::Run() {
@@ -42,7 +50,9 @@ void ThreadManager::WorkerThread::Run() {
 ThreadManager::WorkerThread::~WorkerThread() {
   // Don't join until the thread is fully constructed.
   std::lock_guard<std::mutex> lock(wt_mu_);
-  thd_.join();
+  if (valid_) {
+    gpr_thd_join(thd_);
+  }
 }
 
 ThreadManager::ThreadManager(int min_pollers, int max_pollers)
@@ -111,7 +121,9 @@ void ThreadManager::Initialize() {
 
   for (int i = 0; i < min_pollers_; i++) {
     // Create a new thread (which ends up calling the MainWorkLoop() function
-    new WorkerThread(this);
+    bool valid;
+    new WorkerThread(this, &valid);
+    GPR_ASSERT(valid);  // we need to have at least this minimum
   }
 }
 
@@ -138,18 +150,24 @@ void ThreadManager::MainWorkLoop() {
       case WORK_FOUND:
         // If we got work and there are now insufficient pollers, start a new
         // one
+        bool resources;
         if (!shutdown_ && num_pollers_ < min_pollers_) {
-          num_pollers_++;
-          num_threads_++;
-          // Drop lock before spawning thread to avoid contention
-          lock.unlock();
-          new WorkerThread(this);
+          bool valid;
+          auto* th = new WorkerThread(this, &valid);
+          if (valid) {
+            num_pollers_++;
+            num_threads_++;
+          } else {
+            delete th;
+          }
+          resources = (num_pollers_ > 0);
         } else {
-          // Drop lock for consistency with above branch
-          lock.unlock();
+          resources = true;
         }
+        // Drop lock before any application work
+        lock.unlock();
         // Lock is always released at this point - do the application work
-        DoWork(tag, ok);
+        DoWork(tag, ok, resources);
         // Take the lock again to check post conditions
         lock.lock();
         // If we're shutdown, we should finish at this point.

@@ -38,7 +38,7 @@ class ThreadManagerTest final : public grpc::ThreadManager {
         num_work_found_(0) {}
 
   grpc::ThreadManager::WorkStatus PollForWork(void** tag, bool* ok) override;
-  void DoWork(void* tag, bool ok) override;
+  void DoWork(void* tag, bool ok, bool resources) override;
   void PerformTest();
 
  private:
@@ -89,7 +89,7 @@ grpc::ThreadManager::WorkStatus ThreadManagerTest::PollForWork(void** tag,
   }
 }
 
-void ThreadManagerTest::DoWork(void* tag, bool ok) {
+void ThreadManagerTest::DoWork(void* tag, bool ok, bool resources) {
   gpr_atm_no_barrier_fetch_add(&num_do_work_, 1);
   SleepForMs(kDoWorkDurationMsec);  // Simulate doing work by sleeping
 }

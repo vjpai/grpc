@@ -24,9 +24,9 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <thread>
 
 #include <grpc++/support/config.h>
+#include <grpc/support/thd.h>
 
 #include "src/cpp/server/thread_pool_interface.h"
 
@@ -37,17 +37,19 @@ class DynamicThreadPool final : public ThreadPoolInterface {
   explicit DynamicThreadPool(int reserve_threads);
   ~DynamicThreadPool();
 
-  void Add(const std::function<void()>& callback) override;
+  bool Add(const std::function<void()>& callback) override;
 
  private:
   class DynamicThread {
    public:
-    DynamicThread(DynamicThreadPool* pool);
+    DynamicThread(DynamicThreadPool* pool, bool* valid);
     ~DynamicThread();
 
    private:
     DynamicThreadPool* pool_;
-    std::unique_ptr<std::thread> thd_;
+    std::mutex dt_mu_;
+    gpr_thd_id thd_;
+    bool valid_;
     void ThreadFunc();
   };
   std::mutex mu_;

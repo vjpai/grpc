@@ -220,6 +220,9 @@ class Server final : public ServerInterface, private GrpcLibraryCodegen {
 
   std::unique_ptr<HealthCheckServiceInterface> health_check_service_;
   bool health_check_service_disabled_;
+
+  // A special handler for resource exhausted in sync case
+  std::unique_ptr<internal::MethodHandler> resource_exhausted_handler_;
 };
 
 }  // namespace grpc
