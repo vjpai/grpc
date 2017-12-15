@@ -30,6 +30,7 @@
 #include <grpc++/support/config.h>
 #include <grpc/compression.h>
 #include <grpc/support/cpu.h>
+#include <grpc/support/thd.h>
 #include <grpc/support/useful.h>
 #include <grpc/support/workaround_list.h>
 
@@ -47,6 +48,7 @@ class Service;
 
 namespace testing {
 class ServerBuilderPluginTest;
+class ServerBuilderThreadCreatorOverrideTest;
 }  // namespace testing
 
 /// A builder class for the creation and startup of \a grpc::Server instances.
@@ -213,6 +215,13 @@ class ServerBuilder {
 
  private:
   friend class ::grpc::testing::ServerBuilderPluginTest;
+  friend class ::grpc::testing::ServerBuilderThreadCreatorOverrideTest;
+
+  ServerBuilder& SetThreadCreator(std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+                                                    void*, const gpr_thd_options*)> thread_creator) {
+    thread_creator_ = thread_creator;
+    return *this;
+  }
 
   struct Port {
     grpc::string addr;
@@ -272,6 +281,9 @@ class ServerBuilder {
     grpc_compression_algorithm algorithm;
   } maybe_default_compression_algorithm_;
   uint32_t enabled_compression_algorithms_bitset_;
+
+  std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+                    void*, const gpr_thd_options*)> thread_creator_;
 };
 
 }  // namespace grpc

@@ -36,6 +36,7 @@
 #include <grpc/grpc.h>
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
+#include <grpc/support/thd.h>
 
 #include "src/core/ext/transport/inproc/inproc_transport.h"
 #include "src/core/lib/profiling/timers.h"
@@ -372,7 +373,9 @@ Server::Server(
     int max_receive_message_size, ChannelArguments* args,
     std::shared_ptr<std::vector<std::unique_ptr<ServerCompletionQueue>>>
         sync_server_cqs,
-    int min_pollers, int max_pollers, int sync_cq_timeout_msec)
+    int min_pollers, int max_pollers, int sync_cq_timeout_msec,
+    std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+                      void*, const gpr_thd_options*)> thread_creator)
     : max_receive_message_size_(max_receive_message_size),
       sync_server_cqs_(sync_server_cqs),
       started_(false),
@@ -381,7 +384,8 @@ Server::Server(
       has_generic_service_(false),
       server_(nullptr),
       server_initializer_(new ServerInitializer(this)),
-      health_check_service_disabled_(false) {
+      health_check_service_disabled_(false),
+      thread_creator_(thread_creator) {
   g_gli_initializer.summon();
   gpr_once_init(&g_once_init_callbacks, InitGlobalCallbacks);
   global_callbacks_ = g_callbacks;

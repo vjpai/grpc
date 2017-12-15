@@ -162,7 +162,7 @@ class CommonStressTestInsecure : public CommonStressTest<Service> {
   std::ostringstream server_address_;
 };
 
-template <class Service>
+template <class Service, bool allow_resource_exhaustion>
 class CommonStressTestInproc : public CommonStressTest<Service> {
  public:
   void ResetStub() override {
@@ -294,7 +294,7 @@ class End2endTest : public ::testing::Test {
   Common common_;
 };
 
-static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs) {
+static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs, bool allow_exhaustion) {
   EchoRequest request;
   EchoResponse response;
   request.set_message("Hello");
@@ -304,8 +304,11 @@ static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs) {
     Status s = stub->Echo(&context, request, &response);
     EXPECT_EQ(response.message(), request.message());
     if (!s.ok()) {
-      gpr_log(GPR_ERROR, "RPC error: %d: %s", s.error_code(),
-              s.error_message().c_str());
+      if (!(allow_exhaustion && s.error_code() == StatusCode::RESOURCE_EXHAUSTED)) {
+        gpr_log(GPR_ERROR, "RPC error: %d: %s", s.error_code(),
+                s.error_message().c_str());
+      }
+      break;
     }
     ASSERT_TRUE(s.ok());
   }
@@ -313,11 +316,12 @@ static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs) {
 
 typedef ::testing::Types<
     CommonStressTestSyncServer<CommonStressTestInsecure<TestServiceImpl>>,
-    CommonStressTestSyncServer<CommonStressTestInproc<TestServiceImpl>>,
+  CommonStressTestSyncServer<CommonStressTestInproc<TestServiceImpl, false>>,
+  CommonStressTestSyncServerLowThreadCount<CommonStressTestInproc<TestServiceImpl, true>>,
     CommonStressTestAsyncServer<
         CommonStressTestInsecure<grpc::testing::EchoTestService::AsyncService>>,
     CommonStressTestAsyncServer<
-        CommonStressTestInproc<grpc::testing::EchoTestService::AsyncService>>>
+      CommonStressTestInproc<grpc::testing::EchoTestService::AsyncService, false>>>
     CommonTypes;
 TYPED_TEST_CASE(End2endTest, CommonTypes);
 TYPED_TEST(End2endTest, ThreadStress) {
