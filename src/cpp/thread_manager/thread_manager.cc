@@ -34,12 +34,12 @@ ThreadManager::WorkerThread::WorkerThread(ThreadManager* thd_mgr, bool* valid)
   // Make thread creation exclusive with respect to its join happening in
   // ~WorkerThread().
   std::lock_guard<std::mutex> lock(wt_mu_);
-  *valid = valid_ =
-      thd_mgr->thread_creator_(&thd_, "worker thread",
-                  [](void* th) {
-                    reinterpret_cast<ThreadManager::WorkerThread*>(th)->Run();
-                  },
-                  this, &opt);
+  *valid = valid_ = thd_mgr->thread_creator_(
+      &thd_, "worker thread",
+      [](void* th) {
+        reinterpret_cast<ThreadManager::WorkerThread*>(th)->Run();
+      },
+      this, &opt);
 }
 
 void ThreadManager::WorkerThread::Run() {
@@ -51,18 +51,23 @@ ThreadManager::WorkerThread::~WorkerThread() {
   // Don't join until the thread is fully constructed.
   std::lock_guard<std::mutex> lock(wt_mu_);
   if (valid_) {
-    gpr_thd_join(thd_);
+    thd_mgr_->thread_joiner_(thd_);
   }
 }
 
-ThreadManager::ThreadManager(int min_pollers, int max_pollers,
-				     std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-						       void*, const gpr_thd_options*)> thread_creator)
+ThreadManager::ThreadManager(
+    int min_pollers, int max_pollers,
+    std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                      const gpr_thd_options*)>
+        thread_creator,
+    std::function<void(gpr_thd_id)> thread_joiner)
     : shutdown_(false),
       num_pollers_(0),
       min_pollers_(min_pollers),
       max_pollers_(max_pollers == -1 ? INT_MAX : max_pollers),
-      num_threads_(0), thread_creator_(thread_creator) {}
+      num_threads_(0),
+      thread_creator_(thread_creator),
+      thread_joiner_(thread_joiner) {}
 
 ThreadManager::~ThreadManager() {
   {

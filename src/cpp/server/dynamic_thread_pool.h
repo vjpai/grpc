@@ -35,8 +35,10 @@ namespace grpc {
 class DynamicThreadPool final : public ThreadPoolInterface {
  public:
   DynamicThreadPool(int reserve_threads,
-		    std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-				      void*, const gpr_thd_options*)> thread_creator		    );
+                    std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+                                      void*, const gpr_thd_options*)>
+                        thread_creator,
+                    std::function<void(gpr_thd_id)> thread_joiner);
   ~DynamicThreadPool();
 
   bool Add(const std::function<void()>& callback) override;
@@ -63,8 +65,10 @@ class DynamicThreadPool final : public ThreadPoolInterface {
   int nthreads_;
   int threads_waiting_;
   std::list<DynamicThread*> dead_threads_;
-  std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-		    void*, const gpr_thd_options*)> thread_creator_;
+  std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                    const gpr_thd_options*)>
+      thread_creator_;
+  std::function<void(gpr_thd_id)> thread_joiner_;
 
   void ThreadFunc();
   static void ReapThreads(std::list<DynamicThread*>* tlist);

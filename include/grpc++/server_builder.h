@@ -217,9 +217,13 @@ class ServerBuilder {
   friend class ::grpc::testing::ServerBuilderPluginTest;
   friend class ::grpc::testing::ServerBuilderThreadCreatorOverrideTest;
 
-  ServerBuilder& SetThreadCreator(std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-                                                    void*, const gpr_thd_options*)> thread_creator) {
+  ServerBuilder& SetThreadFunctions(
+      std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                        const gpr_thd_options*)>
+          thread_creator,
+      std::function<void(gpr_thd_id)> thread_joiner) {
     thread_creator_ = thread_creator;
+    thread_joiner_ = thread_joiner;
     return *this;
   }
 
@@ -282,8 +286,10 @@ class ServerBuilder {
   } maybe_default_compression_algorithm_;
   uint32_t enabled_compression_algorithms_bitset_;
 
-  std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-                    void*, const gpr_thd_options*)> thread_creator_;
+  std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                    const gpr_thd_options*)>
+      thread_creator_;
+  std::function<void(gpr_thd_id)> thread_joiner_;
 };
 
 }  // namespace grpc

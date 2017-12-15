@@ -43,7 +43,7 @@ DynamicThreadPool::DynamicThread::DynamicThread(DynamicThreadPool* pool,
 DynamicThreadPool::DynamicThread::~DynamicThread() {
   std::lock_guard<std::mutex> l(dt_mu_);
   if (valid_) {
-    gpr_thd_join(thd_);
+    pool_->thread_joiner_(thd_);
   }
 }
 
@@ -86,14 +86,18 @@ void DynamicThreadPool::ThreadFunc() {
   }
 }
 
-DynamicThreadPool::DynamicThreadPool(int reserve_threads,
-				     std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-						       void*, const gpr_thd_options*)> thread_creator)
-  : shutdown_(false),
-    reserve_threads_(reserve_threads),
-    nthreads_(0),
-    threads_waiting_(0),
-    thread_creator_(thread_creator) {
+DynamicThreadPool::DynamicThreadPool(
+    int reserve_threads,
+    std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                      const gpr_thd_options*)>
+        thread_creator,
+    std::function<void(gpr_thd_id)> thread_joiner)
+    : shutdown_(false),
+      reserve_threads_(reserve_threads),
+      nthreads_(0),
+      threads_waiting_(0),
+      thread_creator_(thread_creator),
+      thread_joiner_(thread_joiner) {
   for (int i = 0; i < reserve_threads_; i++) {
     std::lock_guard<std::mutex> lock(mu_);
     nthreads_++;

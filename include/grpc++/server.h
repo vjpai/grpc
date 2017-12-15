@@ -146,8 +146,10 @@ class Server final : public ServerInterface, private GrpcLibraryCodegen {
          std::shared_ptr<std::vector<std::unique_ptr<ServerCompletionQueue>>>
              sync_server_cqs,
          int min_pollers, int max_pollers, int sync_cq_timeout_msec,
-         std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-                      void*, const gpr_thd_options*)> thread_creator);
+         std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                           const gpr_thd_options*)>
+             thread_creator,
+         std::function<void(gpr_thd_id)> thread_joiner);
 
   /// Register a service. This call does not take ownership of the service.
   /// The service must exist for the lifetime of the Server instance.
@@ -227,8 +229,10 @@ class Server final : public ServerInterface, private GrpcLibraryCodegen {
   std::unique_ptr<HealthCheckServiceInterface> health_check_service_;
   bool health_check_service_disabled_;
 
-  std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-                    void*, const gpr_thd_options*)> thread_creator_;
+  std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                    const gpr_thd_options*)>
+      thread_creator_;
+  std::function<void(gpr_thd_id)> thread_joiner_;
 
   // A special handler for resource exhausted in sync case
   std::unique_ptr<internal::MethodHandler> resource_exhausted_handler_;

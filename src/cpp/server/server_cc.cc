@@ -261,11 +261,15 @@ class Server::SyncRequest final : public internal::CompletionQueueTag {
 // appropriate RPC handlers
 class Server::SyncRequestThreadManager : public ThreadManager {
  public:
-  SyncRequestThreadManager(Server* server, CompletionQueue* server_cq,
-                           std::shared_ptr<GlobalCallbacks> global_callbacks,
-                           int min_pollers, int max_pollers,
-                           int cq_timeout_msec)
-    : ThreadManager(min_pollers, max_pollers, gpr_thd_new),
+  SyncRequestThreadManager(
+      Server* server, CompletionQueue* server_cq,
+      std::shared_ptr<GlobalCallbacks> global_callbacks, int min_pollers,
+      int max_pollers, int cq_timeout_msec,
+      std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                        const gpr_thd_options*)>
+          thread_creator,
+      std::function<void(gpr_thd_id)> thread_joiner)
+      : ThreadManager(min_pollers, max_pollers, thread_creator, thread_joiner),
         server_(server),
         server_cq_(server_cq),
         cq_timeout_msec_(cq_timeout_msec),
@@ -374,8 +378,10 @@ Server::Server(
     std::shared_ptr<std::vector<std::unique_ptr<ServerCompletionQueue>>>
         sync_server_cqs,
     int min_pollers, int max_pollers, int sync_cq_timeout_msec,
-    std::function<int(gpr_thd_id*, const char*, void (*)(void*),
-                      void*, const gpr_thd_options*)> thread_creator)
+    std::function<int(gpr_thd_id*, const char*, void (*)(void*), void*,
+                      const gpr_thd_options*)>
+        thread_creator,
+    std::function<void(gpr_thd_id)> thread_joiner)
     : max_receive_message_size_(max_receive_message_size),
       sync_server_cqs_(sync_server_cqs),
       started_(false),
@@ -385,7 +391,8 @@ Server::Server(
       server_(nullptr),
       server_initializer_(new ServerInitializer(this)),
       health_check_service_disabled_(false),
-      thread_creator_(thread_creator) {
+      thread_creator_(thread_creator),
+      thread_joiner_(thread_joiner) {
   g_gli_initializer.summon();
   gpr_once_init(&g_once_init_callbacks, InitGlobalCallbacks);
   global_callbacks_ = g_callbacks;
@@ -395,7 +402,7 @@ Server::Server(
        it++) {
     sync_req_mgrs_.emplace_back(new SyncRequestThreadManager(
         this, (*it).get(), global_callbacks_, min_pollers, max_pollers,
-        sync_cq_timeout_msec));
+        sync_cq_timeout_msec, thread_creator_, thread_joiner_));
   }
 
   grpc_channel_args channel_args;

@@ -119,6 +119,7 @@ class CommonStressTest {
   virtual void SetUp() = 0;
   virtual void TearDown() = 0;
   virtual void ResetStub() = 0;
+  virtual bool AllowExhaustion() = 0;
   grpc::testing::EchoTestService::Stub* GetStub() { return stub_.get(); }
 
  protected:
@@ -147,6 +148,7 @@ class CommonStressTestInsecure : public CommonStressTest<Service> {
         CreateChannel(server_address_.str(), InsecureChannelCredentials());
     this->stub_ = grpc::testing::EchoTestService::NewStub(channel);
   }
+  bool AllowExhaustion() override { return false; }
 
  protected:
   void SetUpStart(ServerBuilder* builder, Service* service) override {
@@ -170,6 +172,7 @@ class CommonStressTestInproc : public CommonStressTest<Service> {
     std::shared_ptr<Channel> channel = this->server_->InProcessChannel(args);
     this->stub_ = grpc::testing::EchoTestService::NewStub(channel);
   }
+  bool AllowExhaustion() override { return allow_resource_exhaustion; }
 
  protected:
   void SetUpStart(ServerBuilder* builder, Service* service) override {
@@ -192,6 +195,56 @@ class CommonStressTestSyncServer : public BaseClass {
 
  private:
   TestServiceImpl service_;
+};
+
+class ServerBuilderThreadCreatorOverrideTest {
+ public:
+  ServerBuilderThreadCreatorOverrideTest(ServerBuilder* builder, size_t limit)
+      : limit_(limit), threads_(0) {
+    builder->SetThreadFunctions(
+        [this](gpr_thd_id* id, const char* name, void (*f)(void*), void* arg,
+               const gpr_thd_options* options) -> int {
+          std::lock_guard<std::mutex> l(mu_);
+          if ((limit_ < threads_) && (gpr_thd_new(id, name, f, arg, options))) {
+            threads_++;
+            return 1;
+          } else {
+            return 0;
+          }
+        },
+        [this](gpr_thd_id id) {
+          std::lock_guard<std::mutex> l(mu_);
+          threads_--;
+          gpr_thd_join(id);
+        });
+  }
+
+ private:
+  size_t limit_;
+  size_t threads_;
+  std::mutex mu_;
+};
+
+template <class BaseClass>
+class CommonStressTestSyncServerLowThreadCount : public BaseClass {
+ public:
+  void SetUp() override {
+    ServerBuilder builder;
+    this->SetUpStart(&builder, &service_);
+    builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MIN_POLLERS,
+                                1);
+    creator_.reset(new ServerBuilderThreadCreatorOverrideTest(
+        &builder, kNumThreads / 10 + 1));
+    this->SetUpEnd(&builder);
+  }
+  void TearDown() override {
+    this->TearDownStart();
+    this->TearDownEnd();
+  }
+
+ private:
+  TestServiceImpl service_;
+  std::unique_ptr<ServerBuilderThreadCreatorOverrideTest> creator_;
 };
 
 template <class BaseClass>
@@ -294,7 +347,8 @@ class End2endTest : public ::testing::Test {
   Common common_;
 };
 
-static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs, bool allow_exhaustion) {
+static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs,
+                    bool allow_exhaustion) {
   EchoRequest request;
   EchoResponse response;
   request.set_message("Hello");
@@ -304,7 +358,8 @@ static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs, bo
     Status s = stub->Echo(&context, request, &response);
     EXPECT_EQ(response.message(), request.message());
     if (!s.ok()) {
-      if (!(allow_exhaustion && s.error_code() == StatusCode::RESOURCE_EXHAUSTED)) {
+      if (!(allow_exhaustion &&
+            s.error_code() == StatusCode::RESOURCE_EXHAUSTED)) {
         gpr_log(GPR_ERROR, "RPC error: %d: %s", s.error_code(),
                 s.error_message().c_str());
       }
@@ -316,19 +371,21 @@ static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs, bo
 
 typedef ::testing::Types<
     CommonStressTestSyncServer<CommonStressTestInsecure<TestServiceImpl>>,
-  CommonStressTestSyncServer<CommonStressTestInproc<TestServiceImpl, false>>,
-  CommonStressTestSyncServerLowThreadCount<CommonStressTestInproc<TestServiceImpl, true>>,
+    CommonStressTestSyncServer<CommonStressTestInproc<TestServiceImpl, false>>,
+    CommonStressTestSyncServerLowThreadCount<
+        CommonStressTestInproc<TestServiceImpl, true>>,
     CommonStressTestAsyncServer<
         CommonStressTestInsecure<grpc::testing::EchoTestService::AsyncService>>,
-    CommonStressTestAsyncServer<
-      CommonStressTestInproc<grpc::testing::EchoTestService::AsyncService, false>>>
+    CommonStressTestAsyncServer<CommonStressTestInproc<
+        grpc::testing::EchoTestService::AsyncService, false>>>
     CommonTypes;
 TYPED_TEST_CASE(End2endTest, CommonTypes);
 TYPED_TEST(End2endTest, ThreadStress) {
   this->common_.ResetStub();
   std::vector<std::thread> threads;
   for (int i = 0; i < kNumThreads; ++i) {
-    threads.emplace_back(SendRpc, this->common_.GetStub(), kNumRpcs);
+    threads.emplace_back(SendRpc, this->common_.GetStub(), kNumRpcs,
+                         this->common_.AllowExhaustion());
   }
   for (int i = 0; i < kNumThreads; ++i) {
     threads[i].join();
