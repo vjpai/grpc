@@ -31,7 +31,9 @@ namespace grpc {
 
 class ThreadManager {
  public:
-  explicit ThreadManager(int min_pollers, int max_pollers);
+  ThreadManager(int min_pollers, int max_pollers,
+		std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+				  void*, const gpr_thd_options*)> thread_creator);
   virtual ~ThreadManager();
 
   // Initializes and Starts the Rpc Manager threads
@@ -131,6 +133,11 @@ class ThreadManager {
   // The total number of threads (includes threads includes the threads that are
   // currently polling i.e num_pollers_)
   int num_threads_;
+
+  // The function for creating threads. Under normal circumstances, this should
+  // be gpr_thd_new but it is overridable
+  std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+		    void*, const gpr_thd_options*)> thread_creator_;
 
   std::mutex list_mu_;
   std::list<WorkerThread*> completed_threads_;

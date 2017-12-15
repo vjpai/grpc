@@ -35,7 +35,7 @@ ThreadManager::WorkerThread::WorkerThread(ThreadManager* thd_mgr, bool* valid)
   // ~WorkerThread().
   std::lock_guard<std::mutex> lock(wt_mu_);
   *valid = valid_ =
-      gpr_thd_new(&thd_, "worker thread",
+      thd_mgr->thread_creator_(&thd_, "worker thread",
                   [](void* th) {
                     reinterpret_cast<ThreadManager::WorkerThread*>(th)->Run();
                   },
@@ -55,12 +55,14 @@ ThreadManager::WorkerThread::~WorkerThread() {
   }
 }
 
-ThreadManager::ThreadManager(int min_pollers, int max_pollers)
+ThreadManager::ThreadManager(int min_pollers, int max_pollers,
+				     std::function<int(gpr_thd_id*, const char*, void (*)(void*),
+						       void*, const gpr_thd_options*)> thread_creator)
     : shutdown_(false),
       num_pollers_(0),
       min_pollers_(min_pollers),
       max_pollers_(max_pollers == -1 ? INT_MAX : max_pollers),
-      num_threads_(0) {}
+      num_threads_(0), thread_creator_(thread_creator) {}
 
 ThreadManager::~ThreadManager() {
   {

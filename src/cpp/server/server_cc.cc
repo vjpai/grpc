@@ -264,7 +264,7 @@ class Server::SyncRequestThreadManager : public ThreadManager {
                            std::shared_ptr<GlobalCallbacks> global_callbacks,
                            int min_pollers, int max_pollers,
                            int cq_timeout_msec)
-      : ThreadManager(min_pollers, max_pollers),
+    : ThreadManager(min_pollers, max_pollers, gpr_thd_new),
         server_(server),
         server_cq_(server_cq),
         cq_timeout_msec_(cq_timeout_msec),
