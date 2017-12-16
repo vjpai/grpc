@@ -160,7 +160,10 @@ void ThreadManager::MainWorkLoop() {
         bool resources;
         if (!shutdown_ && num_pollers_ < min_pollers_) {
           bool valid;
+          // Drop lock before spawning thread to avoid contention
+          lock.unlock();
           auto* th = new WorkerThread(this, &valid);
+          lock.lock();
           if (valid) {
             num_pollers_++;
             num_threads_++;

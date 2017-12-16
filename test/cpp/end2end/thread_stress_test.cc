@@ -26,6 +26,7 @@
 #include <grpc++/server_builder.h>
 #include <grpc++/server_context.h>
 #include <grpc/grpc.h>
+#include <grpc/support/atm.h>
 #include <grpc/support/thd.h>
 #include <grpc/support/time.h>
 
@@ -204,18 +205,21 @@ class ServerBuilderThreadCreatorOverrideTest {
     builder->SetThreadFunctions(
         [this](gpr_thd_id* id, const char* name, void (*f)(void*), void* arg,
                const gpr_thd_options* options) -> int {
-          std::lock_guard<std::mutex> l(mu_);
-          if ((limit_ < threads_) && (gpr_thd_new(id, name, f, arg, options))) {
-            threads_++;
-            return 1;
-          } else {
-            return 0;
+          std::unique_lock<std::mutex> l(mu_);
+          if (threads_ < limit_) {
+            l.unlock();
+            if (gpr_thd_new(id, name, f, arg, options) != 0) {
+              l.lock();
+              threads_++;
+              return 1;
+            }
           }
+          return 0;
         },
         [this](gpr_thd_id id) {
+          gpr_thd_join(id);
           std::lock_guard<std::mutex> l(mu_);
           threads_--;
-          gpr_thd_join(id);
         });
   }
 
@@ -233,8 +237,7 @@ class CommonStressTestSyncServerLowThreadCount : public BaseClass {
     this->SetUpStart(&builder, &service_);
     builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MIN_POLLERS,
                                 1);
-    creator_.reset(new ServerBuilderThreadCreatorOverrideTest(
-        &builder, kNumThreads / 10 + 1));
+    creator_.reset(new ServerBuilderThreadCreatorOverrideTest(&builder, 4));
     this->SetUpEnd(&builder);
   }
   void TearDown() override {
@@ -348,7 +351,7 @@ class End2endTest : public ::testing::Test {
 };
 
 static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs,
-                    bool allow_exhaustion) {
+                    bool allow_exhaustion, gpr_atm* errors) {
   EchoRequest request;
   EchoResponse response;
   request.set_message("Hello");
@@ -356,16 +359,18 @@ static void SendRpc(grpc::testing::EchoTestService::Stub* stub, int num_rpcs,
   for (int i = 0; i < num_rpcs; ++i) {
     ClientContext context;
     Status s = stub->Echo(&context, request, &response);
-    EXPECT_EQ(response.message(), request.message());
+    EXPECT_TRUE(s.ok() || (allow_exhaustion &&
+                           s.error_code() == StatusCode::RESOURCE_EXHAUSTED));
     if (!s.ok()) {
       if (!(allow_exhaustion &&
             s.error_code() == StatusCode::RESOURCE_EXHAUSTED)) {
         gpr_log(GPR_ERROR, "RPC error: %d: %s", s.error_code(),
                 s.error_message().c_str());
       }
-      break;
+      gpr_atm_no_barrier_fetch_add(errors, static_cast<gpr_atm>(1));
+    } else {
+      EXPECT_EQ(response.message(), request.message());
     }
-    ASSERT_TRUE(s.ok());
   }
 }
 
@@ -383,12 +388,18 @@ TYPED_TEST_CASE(End2endTest, CommonTypes);
 TYPED_TEST(End2endTest, ThreadStress) {
   this->common_.ResetStub();
   std::vector<std::thread> threads;
+  gpr_atm errors;
+  gpr_atm_rel_store(&errors, static_cast<gpr_atm>(0));
   for (int i = 0; i < kNumThreads; ++i) {
     threads.emplace_back(SendRpc, this->common_.GetStub(), kNumRpcs,
-                         this->common_.AllowExhaustion());
+                         this->common_.AllowExhaustion(), &errors);
   }
   for (int i = 0; i < kNumThreads; ++i) {
     threads[i].join();
+  }
+  uint64_t error_cnt = static_cast<uint64_t>(gpr_atm_no_barrier_load(&errors));
+  if (error_cnt != 0) {
+    gpr_log(GPR_INFO, "RPC error count: %" PRIu64, error_cnt);
   }
 }
 
