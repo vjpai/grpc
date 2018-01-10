@@ -34,8 +34,8 @@ extern grpc_core::DebugOnlyTraceFlag grpc_trace_fd_refcount;
     - a completion queue might keep a pollset with an entry for each transport
       that is servicing a call that it's tracking */
 
-typedef struct grpc_pollset grpc_pollset;
-typedef struct grpc_pollset_worker grpc_pollset_worker;
+struct grpc_pollset {};
+struct grpc_pollset_worker {};
 
 size_t grpc_pollset_size(void);
 /* Initialize a pollset: assumes *pollset contains all zeros */

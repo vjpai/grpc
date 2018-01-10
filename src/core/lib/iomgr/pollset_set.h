@@ -26,7 +26,7 @@
    fd's (etc) that have been registered with the set_set to that pollset.
    Registering fd's automatically adds them to all current pollsets. */
 
-typedef struct grpc_pollset_set grpc_pollset_set;
+struct grpc_pollset_set {};
 
 grpc_pollset_set* grpc_pollset_set_create(void);
 void grpc_pollset_set_destroy(grpc_pollset_set* pollset_set);
