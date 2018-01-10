@@ -4929,8 +4929,9 @@ configs:
     LDFLAGS: -rdynamic
     valgrind: --tool=helgrind
   lto:
-    CPPFLAGS: -O2
+    CPPFLAGS: -O2 -flto -Wodr
     DEFINES: NDEBUG
+    LDFLAGS: -flto -Wodr
   memcheck:
     CPPFLAGS: -O0
     DEFINES: _DEBUG DEBUG

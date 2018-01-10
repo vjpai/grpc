@@ -204,7 +204,8 @@ CC_lto = $(DEFAULT_CC)
 CXX_lto = $(DEFAULT_CXX)
 LD_lto = $(DEFAULT_CC)
 LDXX_lto = $(DEFAULT_CXX)
-CPPFLAGS_lto = -O2
+CPPFLAGS_lto = -O2 -flto -Wodr
+LDFLAGS_lto = -flto -Wodr
 DEFINES_lto = NDEBUG
 
 VALID_CONFIG_mutrace = 1
