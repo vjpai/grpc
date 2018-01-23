@@ -20,7 +20,6 @@
 #define GRPC_CORE_EXT_FILTERS_CLIENT_CHANNEL_LB_POLICY_H
 
 #include "src/core/ext/filters/client_channel/subchannel.h"
-#include "src/core/lib/gprpp/ref_counted_ptr.h"
 #include "src/core/lib/iomgr/polling_entity.h"
 #include "src/core/lib/transport/connectivity_state.h"
 
@@ -57,7 +56,7 @@ typedef struct grpc_lb_policy_pick_state {
   grpc_closure* on_complete;
   /// Will be set to the selected subchannel, or nullptr on failure or when
   /// the LB policy decides to drop the call.
-  grpc_core::RefCountedPtr<grpc_core::ConnectedSubchannel> connected_subchannel;
+  std::shared_ptr<grpc_core::ConnectedSubchannel> connected_subchannel;
   /// Will be populated with context to pass to the subchannel call, if needed.
   grpc_call_context_element subchannel_call_context[GRPC_CONTEXT_COUNT];
   /// Upon success, \a *user_data will be set to whatever opaque information

@@ -19,11 +19,11 @@
 #ifndef GRPC_CORE_EXT_FILTERS_CLIENT_CHANNEL_SUBCHANNEL_H
 #define GRPC_CORE_EXT_FILTERS_CLIENT_CHANNEL_SUBCHANNEL_H
 
+#include <memory>
+
 #include "src/core/ext/filters/client_channel/connector.h"
 #include "src/core/lib/channel/channel_stack.h"
 #include "src/core/lib/gpr/arena.h"
-#include "src/core/lib/gprpp/ref_counted.h"
-#include "src/core/lib/gprpp/ref_counted_ptr.h"
 #include "src/core/lib/iomgr/polling_entity.h"
 #include "src/core/lib/transport/connectivity_state.h"
 #include "src/core/lib/transport/metadata.h"
@@ -68,7 +68,7 @@ typedef struct grpc_subchannel_key grpc_subchannel_key;
 #endif
 
 namespace grpc_core {
-class ConnectedSubchannel : public grpc_core::RefCountedWithTracing {
+class ConnectedSubchannel {
  public:
   struct CallArgs {
     grpc_polling_entity* pollent;
@@ -123,7 +123,7 @@ void grpc_subchannel_notify_on_state_change(
 /** retrieve the grpc_core::ConnectedSubchannel - or nullptr if not connected
  * (which may happen before it initially connects or during transient failures)
  * */
-grpc_core::RefCountedPtr<grpc_core::ConnectedSubchannel>
+std::shared_ptr<grpc_core::ConnectedSubchannel>
 grpc_subchannel_get_connected_subchannel(grpc_subchannel* c);
 
 /** return the subchannel index key for \a subchannel */

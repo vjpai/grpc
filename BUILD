@@ -598,26 +598,6 @@ grpc_cc_library(
 )
 
 grpc_cc_library(
-    name = "ref_counted",
-    language = "c++",
-    public_hdrs = ["src/core/lib/gprpp/ref_counted.h"],
-    deps = [
-        "debug_location",
-        "gpr++_base",
-        "grpc_trace",
-    ],
-)
-
-grpc_cc_library(
-    name = "ref_counted_ptr",
-    language = "c++",
-    public_hdrs = ["src/core/lib/gprpp/ref_counted_ptr.h"],
-    deps = [
-        "gpr++_base",
-    ],
-)
-
-grpc_cc_library(
     name = "grpc_base_c",
     srcs = [
         "src/core/lib/backoff/backoff.cc",
@@ -972,10 +952,9 @@ grpc_cc_library(
     ],
     language = "c++",
     deps = [
+        "debug_location",
         "grpc_base",
         "grpc_deadline_filter",
-        "ref_counted",
-        "ref_counted_ptr",
     ],
 )
 

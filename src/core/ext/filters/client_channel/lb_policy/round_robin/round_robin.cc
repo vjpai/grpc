@@ -34,7 +34,6 @@
 #include "src/core/ext/filters/client_channel/subchannel_index.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/debug/trace.h"
-#include "src/core/lib/gprpp/ref_counted_ptr.h"
 #include "src/core/lib/iomgr/combiner.h"
 #include "src/core/lib/iomgr/sockaddr_utils.h"
 #include "src/core/lib/transport/connectivity_state.h"
@@ -513,7 +512,7 @@ static void rr_ping_one_locked(grpc_lb_policy* pol, grpc_closure* on_initiate,
   if (next_ready_index < p->subchannel_list->num_subchannels) {
     grpc_lb_subchannel_data* selected =
         &p->subchannel_list->subchannels[next_ready_index];
-    grpc_core::RefCountedPtr<grpc_core::ConnectedSubchannel> target =
+    std::shared_ptr<grpc_core::ConnectedSubchannel> target =
         selected->connected_subchannel;
     target->Ping(on_initiate, on_ack);
   } else {
