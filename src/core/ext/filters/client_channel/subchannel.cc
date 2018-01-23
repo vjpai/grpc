@@ -600,8 +600,8 @@ static bool publish_transport_locked(grpc_subchannel* c) {
 
   /* publish */
   c->connected_subchannel =
-    std::allocate_shared<grpc_core::ConnectedSubchannel>(
-      grpc_core::Allocator<grpc_core::ConnectedSubchannel>(), stk);
+      std::allocate_shared<grpc_core::ConnectedSubchannel>(
+          grpc_core::Allocator<grpc_core::ConnectedSubchannel>(), stk);
   gpr_log(GPR_INFO, "New connected subchannel at %p for subchannel %p",
           c->connected_subchannel.get(), c);
 
