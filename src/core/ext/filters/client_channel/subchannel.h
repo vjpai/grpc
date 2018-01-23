@@ -68,7 +68,8 @@ typedef struct grpc_subchannel_key grpc_subchannel_key;
 #endif
 
 namespace grpc_core {
-class ConnectedSubchannel {
+class ConnectedSubchannel :
+  public std::enable_shared_from_this<ConnectedSubchannel> {
  public:
   struct CallArgs {
     grpc_polling_entity* pollent;

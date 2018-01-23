@@ -599,7 +599,8 @@ static bool publish_transport_locked(grpc_subchannel* c) {
   }
 
   /* publish */
-  c->connected_subchannel.allocate_shared(
+  c->connected_subchannel =
+    std::allocate_shared<grpc_core::ConnectedSubchannel>(
       grpc_core::Allocator<grpc_core::ConnectedSubchannel>(), stk);
   gpr_log(GPR_INFO, "New connected subchannel at %p for subchannel %p",
           c->connected_subchannel.get(), c);
@@ -775,9 +776,7 @@ grpc_error* ConnectedSubchannel::CreateCall(const CallArgs& args,
       args.arena,
       sizeof(grpc_subchannel_call) + channel_stack_->call_stack_size);
   grpc_call_stack* callstk = SUBCHANNEL_CALL_TO_CALL_STACK(*call);
-  (*call)->connection.reset(this,
-			    DefaultDelete<ConnectedSubchannel>(),
-			    Allocator<ConnectedSubchannel>());
+  (*call)->connection = shared_from_this();
   const grpc_call_element_args call_args = {
       callstk,           /* call_stack */
       nullptr,           /* server_transport_data */
