@@ -211,7 +211,7 @@ class Server::SyncRequest final : public internal::CompletionQueueTag {
     }
 
     void Run(std::shared_ptr<GlobalCallbacks> global_callbacks) {
-      ctx_.BeginCompletionOp(&call_);
+      ctx_.BeginCompletionOp(&call_, nullptr);
       global_callbacks->PreSynchronousRequest(&ctx_);
       method_->handler()->RunHandler(internal::MethodHandler::HandlerParameter(
           &call_, &ctx_, request_payload_));
@@ -652,7 +652,7 @@ bool ServerInterface::BaseAsyncRequest::FinalizeResult(void** tag,
   internal::Call call(call_, server_, call_cq_,
                       server_->max_receive_message_size());
   if (*status && call_) {
-    context_->BeginCompletionOp(&call);
+    context_->BeginCompletionOp(&call, nullptr);
   }
   // just the pointers inside call are copied here
   stream_->BindCall(&call);

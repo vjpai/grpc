@@ -264,7 +264,7 @@ class ServerContext {
 
   class CompletionOp;
 
-  void BeginCompletionOp(internal::Call* call);
+  void BeginCompletionOp(internal::Call* call, void* notify_tag);
   /// Return the tag queued by BeginCompletionOp()
   internal::CompletionQueueTag* GetCompletionOpTag();
 

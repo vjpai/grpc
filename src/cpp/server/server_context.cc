@@ -40,8 +40,9 @@ namespace grpc {
 class ServerContext::CompletionOp final : public internal::CallOpSetInterface {
  public:
   // initial refs: one in the server context, one in the cq
-  CompletionOp()
-      : has_tag_(false),
+  CompletionOp(void* notify_tag)
+      : notify_tag_(notify_tag == nullptr ? this : notify_tag_),
+        has_tag_(false),
         tag_(nullptr),
         refs_(2),
         finalized_(false),
@@ -63,12 +64,18 @@ class ServerContext::CompletionOp final : public internal::CallOpSetInterface {
 
   void Unref();
 
+  void* Tag() override { return notify_tag_; }
+
+  /// Don't allow tag setting after construction
+  void SetTag(void *) override {}
+
  private:
   bool CheckCancelledNoPluck() {
     std::lock_guard<std::mutex> g(mu_);
     return finalized_ ? (cancelled_ != 0) : false;
   }
 
+  void* const notify_tag_;
   bool has_tag_;
   void* tag_;
   std::mutex mu_;
@@ -146,9 +153,9 @@ ServerContext::~ServerContext() {
   }
 }
 
-void ServerContext::BeginCompletionOp(internal::Call* call) {
+void ServerContext::BeginCompletionOp(internal::Call* call, void* notify_tag) {
   GPR_ASSERT(!completion_op_);
-  completion_op_ = new CompletionOp();
+  completion_op_ = new CompletionOp(notify_tag);
   if (has_notify_when_done_tag_) {
     completion_op_->set_tag(async_notify_when_done_tag_);
   }
