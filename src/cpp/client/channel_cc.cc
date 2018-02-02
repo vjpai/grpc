@@ -128,8 +128,8 @@ void Channel::PerformOpsOnCall(internal::CallOpSetInterface* ops,
   size_t nops = 0;
   grpc_op cops[MAX_OPS];
   ops->FillOps(call->call(), cops, &nops);
-  GPR_ASSERT(GRPC_CALL_OK ==
-             grpc_call_start_batch(call->call(), cops, nops, ops, nullptr));
+  GPR_ASSERT(GRPC_CALL_OK == grpc_call_start_batch(call->call(), cops, nops,
+                                                   ops->Tag(), nullptr));
 }
 
 void* Channel::RegisterMethod(const char* method) {

@@ -605,6 +605,14 @@ class CallOpSetInterface : public CompletionQueueTag {
   /// Fills in grpc_op, starting from ops[*nops] and moving
   /// upwards.
   virtual void FillOps(grpc_call* call, grpc_op* ops, size_t* nops) = 0;
+
+  /// Getter for the notification tag for this CallOpSetInterface
+  /// Typically "this"
+  virtual void* Tag() = 0;
+
+  /// Getter for the notification tag for this CallOpSetInterface
+  /// Used to override default notification tag
+  virtual void SetTag(void* tag) = 0;
 };
 
 /// Primary implementation of CallOpSetInterface.
@@ -624,7 +632,7 @@ class CallOpSet : public CallOpSetInterface,
                   public Op5,
                   public Op6 {
  public:
-  CallOpSet() : return_tag_(this), call_(nullptr) {}
+  CallOpSet() : notify_tag_(this), return_tag_(this), call_(nullptr) {}
   void FillOps(grpc_call* call, grpc_op* ops, size_t* nops) override {
     this->Op1::AddOp(ops, nops);
     this->Op2::AddOp(ops, nops);
@@ -651,7 +659,12 @@ class CallOpSet : public CallOpSetInterface,
 
   void set_output_tag(void* return_tag) { return_tag_ = return_tag; }
 
+  void* Tag() override { return notify_tag_; }
+
+  void SetTag(void* tag) override { notify_tag_ = tag; }
+
  private:
+  void* notify_tag_;
   void* return_tag_;
   grpc_call* call_;
 };
