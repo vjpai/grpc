@@ -622,11 +622,6 @@ typedef enum {
   GRPC_CQ_CALLBACK
 } grpc_cq_completion_type;
 
-typedef struct {
-  void (*callback_func)(void*);
-  void* callback_arg;
-} grpc_cq_callback;
-
 #define GRPC_CQ_CURRENT_VERSION 1
 typedef struct grpc_completion_queue_attributes {
   /** The version number of this structure. More fields might be added to this

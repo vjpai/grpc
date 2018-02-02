@@ -46,6 +46,15 @@ typedef struct grpc_cq_completion {
   uintptr_t next;
 } grpc_cq_completion;
 
+/// For callback CQs, the following is what is actually intended by
+/// the tag.
+/// TODO(vjpai): Improve this to a C++-style function when possible
+typedef struct {
+  void (*callback_func)(void*);
+  void* callback_arg;
+} grpc_cq_callback;
+
+
 #ifndef NDEBUG
 void grpc_cq_internal_ref(grpc_completion_queue* cc, const char* reason,
                           const char* file, int line);
