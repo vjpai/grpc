@@ -33,6 +33,10 @@ typedef struct {
   int flags; /** Opaque field. Get and set with accessors below. */
 } gpr_thd_options;
 
+/// Create a new thread object with the specified name that is not yet runnable.
+/// Return a 
+
+
 /** Create a new thread running (*thd_body)(arg) and place its thread identifier
    in *t, and return true.  If there are insufficient resources, return false.
    thd_name is the name of the thread for identification purposes on platforms
