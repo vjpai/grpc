@@ -28,6 +28,23 @@
 #include <grpc/support/thd_id.h>
 #include <grpc/support/time.h>
 
+namespace grpc_core {
+
+class Thread final {
+ public:
+  Thread(const char* thd_name);
+  ~Thread();
+  
+  bool joinable() const;
+  void set_joinable(bool j);
+
+  
+ private:
+  
+};
+
+}  // namespace grpc_core
+
 /** Thread creation options. */
 typedef struct {
   int flags; /** Opaque field. Get and set with accessors below. */
