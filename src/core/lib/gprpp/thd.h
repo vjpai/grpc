@@ -37,8 +37,20 @@ class Thread {
   /// use placement new to construct a real thread. Does not init mu_ and cv_
   Thread() : real_(false), alive_(false), started_(false), joined_(false) {}
 
+  /// Normal constructor to create a thread with name \a thd_name,
+  /// which will execute a thread based on function \a thd_body
+  /// with argument \a arg once it is started.
+  /// The optional \a success argument indicates whether the thread
+  /// is successfully created.
   Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
          bool* success = nullptr);
+
+  /// Move constructor for thread
+  Thread(Thread&&);
+
+  /// Move assignment operator for thread
+  Thread& operator=(Thread&&);
+
   ~Thread();
 
   void Start();
@@ -48,13 +60,25 @@ class Thread {
   static bool AwaitAll(gpr_timespec deadline);
 
  private:
+  Thread(const Thread&) = delete;
+  Thread& operator=(const Thread&) = delete;
+
   gpr_mu mu_;
   gpr_cv ready_;
 
   gpr_thd_id id_;
+
+  // The following fields indicate state about the thread
+  // Is it real (as opposed to being a dummy placeholder Thread?)
   bool real_;
+
+  // Is it alive (is there a successful thread of control for this Thread)
   bool alive_;
+
+  // Has the thread been started?
   bool started_;
+
+  // Has the thread been joined?
   bool joined_;
 };
 

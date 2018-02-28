@@ -86,7 +86,7 @@ Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
                           [](void* v) WIN_LAMBDA -> DWORD {
                             g_thd_info = static_cast<thd_info*>(v);
                             gpr_mu_lock(&g_thd_info->thread->mu_);
-                            if (!g_thd_info->thread->started_) {
+                            while (!g_thd_info->thread->started_) {
                               gpr_cv_wait(&g_thd_info->thread->ready_,
                                           &g_thd_info->thread->mu_,
                                           gpr_inf_future(GPR_CLOCK_MONOTONIC));
@@ -125,6 +125,7 @@ Thread::~Thread() {
 }
 
 void Thread::Start() {
+  GPR_ASSERT(real_);
   gpr_mu_lock(&mu_);
   if (alive_) {
     started_ = true;
