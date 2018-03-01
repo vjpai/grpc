@@ -71,7 +71,11 @@ class Thread {
   /// thread actually exists
   Thread& operator=(Thread&& other) {
     if (this != &other) {
-      GPR_ASSERT(impl_ == nullptr);
+      // TODO(vjpai): if we can be sure that all Thread's are actually
+      // constructed, then we should assert GPR_ASSERT(impl_ == nullptr) here.
+      // However, as long as threads come in structures that are
+      // allocated via gpr_malloc, this will not be the case, so we cannot
+      // assert it for the time being.
       state_ = other.state_;
       impl_ = other.impl_;
       other.state_ = MOVED;
