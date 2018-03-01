@@ -29,6 +29,8 @@
 #include <grpc/support/thd_id.h>
 #include <string.h>
 
+#include "src/core/lib/gprpp/memory.h"
+
 #if defined(_MSC_VER)
 #define thread_local __declspec(thread)
 #define WIN_LAMBDA
@@ -40,8 +42,9 @@
 #endif
 
 namespace {
+class ThreadInternalsWindows;
 struct thd_info {
-  grpc_core::Thread* thread;
+  ThreadInternalsWindows* thread;
   void (*body)(void* arg); /* body of a thread */
   void* arg;               /* argument to a thread */
   HANDLE join_event;       /* the join event */
@@ -54,35 +57,25 @@ void destroy_thread(struct thd_info* t) {
   CloseHandle(t->join_event);
   gpr_free(t);
 }
-}  // namespace
 
-namespace grpc_core {
+class ThreadInternalsWindows : public grpc_core::internal::ThreadInternalsInterface {
+public:
+  ThreadInternalsWindows(void (*thd_body)(void* arg), void* arg, bool* success) {
+    gpr_mu_init(&mu_);
+    gpr_cv_init(&ready_);
+    
+    HANDLE handle;
+    info_ = (struct thd_info*)gpr_malloc(sizeof(*info_));
+    info->thread = this;
+    info->body = thd_body;
+    info->arg = arg;
 
-void Thread::Init() {}
-
-bool Thread::AwaitAll(gpr_timespec deadline) {
-  // TODO: Consider adding this if needed
-  return false;
-}
-
-Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
-               bool* success)
-    : real_(true), alive_(false), started_(false), joined_(false) {
-  gpr_mu_init(&mu_);
-  gpr_cv_init(&ready_);
-
-  HANDLE handle;
-  struct thd_info* info = (struct thd_info*)gpr_malloc(sizeof(*info));
-  info->thread = this;
-  info->body = thd_body;
-  info->arg = arg;
-
-  info->join_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-  if (info->join_event == nullptr) {
-    gpr_free(info);
-    alive_ = false;
-  } else {
-    handle = CreateThread(nullptr, 64 * 1024,
+    info->join_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (info->join_event == nullptr) {
+      gpr_free(info_);
+      *success = false;
+    } else {
+      handle = CreateThread(nullptr, 64 * 1024,
                           [](void* v) WIN_LAMBDA -> DWORD {
                             g_thd_info = static_cast<thd_info*>(v);
                             gpr_mu_lock(&g_thd_info->thread->mu_);
@@ -99,50 +92,68 @@ Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
                           },
                           info, 0, nullptr);
     if (handle == nullptr) {
-      destroy_thread(info);
-      alive_ = false;
+      destroy_thread(info_);
+      *success_ = false;
     } else {
-      id_ = (gpr_thd_id)info;
       CloseHandle(handle);
-      alive_ = true;
+      *success = true;
+    }
     }
   }
-  if (success != nullptr) {
-    *success = alive_;
-  }
-}
 
-Thread::~Thread() {
-  if (!alive_) {
-    // This thread never existed, so nothing to do
-  } else {
-    GPR_ASSERT(joined_);
-  }
-  if (real_) {
+  ~ThreadInternalsWindows() override {
     gpr_mu_destroy(&mu_);
     gpr_cv_destroy(&ready_);
   }
-}
 
-void Thread::Start() {
-  GPR_ASSERT(real_);
-  gpr_mu_lock(&mu_);
-  if (alive_) {
+  void Start() override {
+    gpr_mu_lock(&mu_);
     started_ = true;
     gpr_cv_signal(&ready_);
+    gpr_mu_unlock(&mu_);
   }
-  gpr_mu_unlock(&mu_);
+
+  void Join() override {
+    DWORD ret = WaitForSingleObject(info_->join_event, INFINITE);
+    GPR_ASSERT(ret == WAIT_OBJECT_0);
+    destroy_thread(info_);
+  }
+  
+private:
+  gpr_mu mu_;
+  gpr_cv ready_;
+  bool started_;
+  thd_info* info_;
+};
+
+}  // namespace
+
+namespace grpc_core {
+
+void Thread::Init() {}
+
+bool Thread::AwaitAll(gpr_timespec deadline) {
+  // TODO: Consider adding this if needed
+  return false;
 }
 
-void Thread::Join() {
-  if (alive_) {
-    thd_info* info = (thd_info*)id_;
-    DWORD ret = WaitForSingleObject(info->join_event, INFINITE);
-    GPR_ASSERT(ret == WAIT_OBJECT_0);
-    destroy_thread(info);
+Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
+               bool* success) {
+  bool outcome;
+  impl_ = grpc_core::New<ThreadInternalsWindows>(thd_body, arg, &outcome);
+  if (outcome) {
+    state_ = ALIVE;
+  } else {
+    state_ = FAILED;
+    grpc_core::Delete(impl_);
+    impl_ = nullptr;
   }
-  joined_ = true;
+
+  if (success != nullptr) {
+    *success = outcome;
+  }
 }
+
 }  // namespace grpc_core
 
 gpr_thd_id gpr_thd_currentid(void) { return (gpr_thd_id)g_thd_info; }

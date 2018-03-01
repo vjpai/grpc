@@ -18,8 +18,6 @@
 
 #include "src/core/lib/iomgr/combiner.h"
 
-#include <new>
-
 #include <grpc/grpc.h>
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -105,7 +103,7 @@ static void test_execute_many(void) {
     ta[i].ctr = 0;
     ta[i].lock = lock;
     gpr_event_init(&ta[i].done);
-    new (&thds[i])
+    thds[i] = 
         grpc_core::Thread("grpc_execute_many", execute_many_loop, &ta[i]);
     thds[i].Start();
   }

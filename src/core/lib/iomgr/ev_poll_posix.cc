@@ -31,7 +31,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <new>
 
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -1380,7 +1379,7 @@ static poll_args* get_poller_locked(struct pollfd* fds, nfds_t count) {
   init_result(pargs);
   cache_poller_locked(pargs);
   gpr_ref(&g_cvfds.pollcount);
-  new (&pargs->poller_thd) grpc_core::Thread("grpc_poller", &run_poll, pargs);
+  pargs->poller_thd = grpc_core::Thread("grpc_poller", &run_poll, pargs);
   pargs->poller_thd.Start();
   return pargs;
 }
@@ -1467,7 +1466,6 @@ static void cache_harvest_locked() {
     gpr_cv_signal(&args->harvest);
     gpr_cv_wait(&args->join, &g_cvfds.mu, gpr_inf_future(GPR_CLOCK_MONOTONIC));
     args->poller_thd.Join();
-    args->poller_thd.~Thread();
     gpr_free(args);
   }
 }

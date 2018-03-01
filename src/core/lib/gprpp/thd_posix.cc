@@ -34,6 +34,7 @@
 
 #include "src/core/lib/gpr/fork.h"
 #include "src/core/lib/gpr/useful.h"
+#include "src/core/lib/gprpp/memory.h"
 
 namespace grpc_core {
 namespace {
@@ -42,18 +43,97 @@ gpr_cv g_cv;
 int g_thread_count;
 int g_awaiting_threads;
 
+class ThreadInternalsPosix;
 struct thd_arg {
-  Thread* thread;
+  ThreadInternalsPosix* thread;
   void (*body)(void* arg); /* body of a thread */
   void* arg;               /* argument to a thread */
   const char* name;        /* name of thread. Can be nullptr. */
 };
 
+class ThreadInternalsPosix : public grpc_core::internal::ThreadInternalsInterface {
+public:
+  ThreadInternalsPosix(const char* thd_name, void (*thd_body)(void* arg),
+		       void* arg, bool* success): started_(false) {
+    gpr_mu_init(&mu_);
+    gpr_cv_init(&ready_);
+    pthread_attr_t attr;
+    /* don't use gpr_malloc as we may cause an infinite recursion with
+     * the profiling code */
+    thd_arg* info = static_cast<thd_arg*>(malloc(sizeof(*info)));
+    GPR_ASSERT(info != nullptr);
+    info->thread = this;
+    info->body = thd_body;
+    info->arg = arg;
+    info->name = thd_name;
+    inc_thd_count();
+
+    GPR_ASSERT(pthread_attr_init(&attr) == 0);
+    GPR_ASSERT(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE) == 0);
+
+    *success = (pthread_create(&pthread_id_, &attr,
+			     [](void* v) -> void* {
+			       thd_arg arg = *static_cast<thd_arg*>(v);
+			       free(v);
+			       if (arg.name != nullptr) {
+#if GPR_APPLE_PTHREAD_NAME
+				 /* Apple supports 64 characters, and will
+				  * truncate if it's longer. */
+				 pthread_setname_np(arg.name);
+#elif GPR_LINUX_PTHREAD_NAME
+				 /* Linux supports 16 characters max, and will
+				  * error if it's longer. */
+				 char buf[16];
+				 size_t buf_len = GPR_ARRAY_SIZE(buf) - 1;
+				 strncpy(buf, arg.name, buf_len);
+				 buf[buf_len] = '\0';
+				 pthread_setname_np(pthread_self(), buf);
+#endif  // GPR_APPLE_PTHREAD_NAME
+			       }
+			       
+			       gpr_mu_lock(&arg.thread->mu_);
+			       while (!arg.thread->started_) {
+				 gpr_cv_wait(&arg.thread->ready_, &arg.thread->mu_,
+					     gpr_inf_future(GPR_CLOCK_MONOTONIC));
+			       }
+			       gpr_mu_unlock(&arg.thread->mu_);
+			       
+			       (*arg.body)(arg.arg);
+			       dec_thd_count();
+			       return nullptr;
+			     },
+			     info) == 0);
+    
+    GPR_ASSERT(pthread_attr_destroy(&attr) == 0);
+
+    if (!success) {
+      /* don't use gpr_free, as this was allocated using malloc (see above) */
+      free(info);
+      dec_thd_count();
+    }
+  };
+
+  ~ThreadInternalsPosix() override {
+    gpr_mu_destroy(&mu_);
+    gpr_cv_destroy(&ready_);
+  }
+
+  void Start() override {
+    gpr_mu_lock(&mu_);
+    started_ = true;
+    gpr_cv_signal(&ready_);
+    gpr_mu_unlock(&mu_);
+  }
+
+  void Join() override {
+    pthread_join(pthread_id_, nullptr);
+  }
+private:
 /*****************************************
  * Only used when fork support is enabled
  */
 
-void inc_thd_count() {
+static void inc_thd_count() {
   if (grpc_fork_support_enabled()) {
     gpr_mu_lock(&g_mu);
     g_thread_count++;
@@ -61,7 +141,7 @@ void inc_thd_count() {
   }
 }
 
-void dec_thd_count() {
+static void dec_thd_count() {
   if (grpc_fork_support_enabled()) {
     gpr_mu_lock(&g_mu);
     g_thread_count--;
@@ -72,102 +152,29 @@ void dec_thd_count() {
   }
 }
 
+  gpr_mu mu_;
+  gpr_cv ready_;
+  bool started_;
+  pthread_t pthread_id_;
+};
+
 }  // namespace
-
+  
 Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
-               bool* success)
-    : real_(true), alive_(false), started_(false), joined_(false) {
-  gpr_mu_init(&mu_);
-  gpr_cv_init(&ready_);
-  pthread_attr_t attr;
-  /* don't use gpr_malloc as we may cause an infinite recursion with
-   * the profiling code */
-  thd_arg* info = static_cast<thd_arg*>(malloc(sizeof(*info)));
-  GPR_ASSERT(info != nullptr);
-  info->thread = this;
-  info->body = thd_body;
-  info->arg = arg;
-  info->name = thd_name;
-  inc_thd_count();
-
-  GPR_ASSERT(pthread_attr_init(&attr) == 0);
-  GPR_ASSERT(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE) == 0);
-
-  pthread_t p;
-  alive_ = (pthread_create(&p, &attr,
-                           [](void* v) -> void* {
-                             thd_arg arg = *static_cast<thd_arg*>(v);
-                             free(v);
-                             if (arg.name != nullptr) {
-#if GPR_APPLE_PTHREAD_NAME
-                               /* Apple supports 64 characters, and will
-                                * truncate if it's longer. */
-                               pthread_setname_np(arg.name);
-#elif GPR_LINUX_PTHREAD_NAME
-                               /* Linux supports 16 characters max, and will
-                                * error if it's longer. */
-                               char buf[16];
-                               size_t buf_len = GPR_ARRAY_SIZE(buf) - 1;
-                               strncpy(buf, arg.name, buf_len);
-                               buf[buf_len] = '\0';
-                               pthread_setname_np(pthread_self(), buf);
-#endif  // GPR_APPLE_PTHREAD_NAME
-                             }
-
-                             gpr_mu_lock(&arg.thread->mu_);
-                             while (!arg.thread->started_) {
-                               gpr_cv_wait(&arg.thread->ready_, &arg.thread->mu_,
-                                           gpr_inf_future(GPR_CLOCK_MONOTONIC));
-                             }
-                             gpr_mu_unlock(&arg.thread->mu_);
-
-                             (*arg.body)(arg.arg);
-                             dec_thd_count();
-                             return nullptr;
-                           },
-                           info) == 0);
+               bool* success) {
+  bool outcome;
+  impl_ = grpc_core::New<ThreadInternalsPosix>(thd_name, thd_body, arg, &outcome);
+  if (outcome) {
+    state_ = ALIVE;
+  } else {
+    state_ = FAILED;
+    grpc_core::Delete(impl_);
+    impl_ = nullptr;
+  }
 
   if (success != nullptr) {
-    *success = alive_;
+    *success = outcome;
   }
-
-  id_ = gpr_thd_id(p);
-  GPR_ASSERT(pthread_attr_destroy(&attr) == 0);
-
-  if (!alive_) {
-    /* don't use gpr_free, as this was allocated using malloc (see above) */
-    free(info);
-    dec_thd_count();
-  }
-}
-
-Thread::~Thread() {
-  if (!alive_) {
-    // This thread never existed, so nothing to do
-  } else {
-    GPR_ASSERT(joined_);
-  }
-  if (real_) {
-    gpr_mu_destroy(&mu_);
-    gpr_cv_destroy(&ready_);
-  }
-}
-
-void Thread::Start() {
-  GPR_ASSERT(real_);
-  gpr_mu_lock(&mu_);
-  if (alive_) {
-    started_ = true;
-    gpr_cv_signal(&ready_);
-  }
-  gpr_mu_unlock(&mu_);
-}
-
-void Thread::Join() {
-  if (alive_) {
-    pthread_join(pthread_t(id_), nullptr);
-  }
-  joined_ = true;
 }
 
 void Thread::Init() {
