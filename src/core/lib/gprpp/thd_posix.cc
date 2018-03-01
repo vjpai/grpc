@@ -51,10 +51,12 @@ struct thd_arg {
   const char* name;        /* name of thread. Can be nullptr. */
 };
 
-class ThreadInternalsPosix : public grpc_core::internal::ThreadInternalsInterface {
-public:
+class ThreadInternalsPosix
+    : public grpc_core::internal::ThreadInternalsInterface {
+ public:
   ThreadInternalsPosix(const char* thd_name, void (*thd_body)(void* arg),
-		       void* arg, bool* success): started_(false) {
+                       void* arg, bool* success)
+      : started_(false) {
     gpr_mu_init(&mu_);
     gpr_cv_init(&ready_);
     pthread_attr_t attr;
@@ -69,41 +71,43 @@ public:
     inc_thd_count();
 
     GPR_ASSERT(pthread_attr_init(&attr) == 0);
-    GPR_ASSERT(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE) == 0);
+    GPR_ASSERT(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE) ==
+               0);
 
-    *success = (pthread_create(&pthread_id_, &attr,
-			     [](void* v) -> void* {
-			       thd_arg arg = *static_cast<thd_arg*>(v);
-			       free(v);
-			       if (arg.name != nullptr) {
+    *success =
+        (pthread_create(&pthread_id_, &attr,
+                        [](void* v) -> void* {
+                          thd_arg arg = *static_cast<thd_arg*>(v);
+                          free(v);
+                          if (arg.name != nullptr) {
 #if GPR_APPLE_PTHREAD_NAME
-				 /* Apple supports 64 characters, and will
-				  * truncate if it's longer. */
-				 pthread_setname_np(arg.name);
+                            /* Apple supports 64 characters, and will
+                             * truncate if it's longer. */
+                            pthread_setname_np(arg.name);
 #elif GPR_LINUX_PTHREAD_NAME
-				 /* Linux supports 16 characters max, and will
-				  * error if it's longer. */
-				 char buf[16];
-				 size_t buf_len = GPR_ARRAY_SIZE(buf) - 1;
-				 strncpy(buf, arg.name, buf_len);
-				 buf[buf_len] = '\0';
-				 pthread_setname_np(pthread_self(), buf);
+                            /* Linux supports 16 characters max, and will
+                             * error if it's longer. */
+                            char buf[16];
+                            size_t buf_len = GPR_ARRAY_SIZE(buf) - 1;
+                            strncpy(buf, arg.name, buf_len);
+                            buf[buf_len] = '\0';
+                            pthread_setname_np(pthread_self(), buf);
 #endif  // GPR_APPLE_PTHREAD_NAME
-			       }
-			       
-			       gpr_mu_lock(&arg.thread->mu_);
-			       while (!arg.thread->started_) {
-				 gpr_cv_wait(&arg.thread->ready_, &arg.thread->mu_,
-					     gpr_inf_future(GPR_CLOCK_MONOTONIC));
-			       }
-			       gpr_mu_unlock(&arg.thread->mu_);
-			       
-			       (*arg.body)(arg.arg);
-			       dec_thd_count();
-			       return nullptr;
-			     },
-			     info) == 0);
-    
+                          }
+
+                          gpr_mu_lock(&arg.thread->mu_);
+                          while (!arg.thread->started_) {
+                            gpr_cv_wait(&arg.thread->ready_, &arg.thread->mu_,
+                                        gpr_inf_future(GPR_CLOCK_MONOTONIC));
+                          }
+                          gpr_mu_unlock(&arg.thread->mu_);
+
+                          (*arg.body)(arg.arg);
+                          dec_thd_count();
+                          return nullptr;
+                        },
+                        info) == 0);
+
     GPR_ASSERT(pthread_attr_destroy(&attr) == 0);
 
     if (!success) {
@@ -125,32 +129,31 @@ public:
     gpr_mu_unlock(&mu_);
   }
 
-  void Join() override {
-    pthread_join(pthread_id_, nullptr);
-  }
-private:
-/*****************************************
- * Only used when fork support is enabled
- */
+  void Join() override { pthread_join(pthread_id_, nullptr); }
 
-static void inc_thd_count() {
-  if (grpc_fork_support_enabled()) {
-    gpr_mu_lock(&g_mu);
-    g_thread_count++;
-    gpr_mu_unlock(&g_mu);
-  }
-}
+ private:
+  /*****************************************
+   * Only used when fork support is enabled
+   */
 
-static void dec_thd_count() {
-  if (grpc_fork_support_enabled()) {
-    gpr_mu_lock(&g_mu);
-    g_thread_count--;
-    if (g_awaiting_threads && g_thread_count == 0) {
-      gpr_cv_signal(&g_cv);
+  static void inc_thd_count() {
+    if (grpc_fork_support_enabled()) {
+      gpr_mu_lock(&g_mu);
+      g_thread_count++;
+      gpr_mu_unlock(&g_mu);
     }
-    gpr_mu_unlock(&g_mu);
   }
-}
+
+  static void dec_thd_count() {
+    if (grpc_fork_support_enabled()) {
+      gpr_mu_lock(&g_mu);
+      g_thread_count--;
+      if (g_awaiting_threads && g_thread_count == 0) {
+        gpr_cv_signal(&g_cv);
+      }
+      gpr_mu_unlock(&g_mu);
+    }
+  }
 
   gpr_mu mu_;
   gpr_cv ready_;
@@ -159,11 +162,12 @@ static void dec_thd_count() {
 };
 
 }  // namespace
-  
+
 Thread::Thread(const char* thd_name, void (*thd_body)(void* arg), void* arg,
                bool* success) {
   bool outcome;
-  impl_ = grpc_core::New<ThreadInternalsPosix>(thd_name, thd_body, arg, &outcome);
+  impl_ =
+      grpc_core::New<ThreadInternalsPosix>(thd_name, thd_body, arg, &outcome);
   if (outcome) {
     state_ = ALIVE;
   } else {

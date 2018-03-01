@@ -102,7 +102,7 @@ static void concurrent_test(void) {
 
   for (int i = 0; i < CONCURRENT_TEST_THREADS; i++) {
     thds[i] =
-      grpc_core::Thread("grpc_concurrent_test", concurrent_test_body, &args);
+        grpc_core::Thread("grpc_concurrent_test", concurrent_test_body, &args);
     thds[i].Start();
   }
 

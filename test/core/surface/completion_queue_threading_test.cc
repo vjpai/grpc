@@ -94,7 +94,7 @@ static void test_too_many_plucks(void) {
     }
     thread_states[i].cc = cc;
     thread_states[i].tag = tags[i];
-    threads[i] = 
+    threads[i] =
         grpc_core::Thread("grpc_pluck_test", pluck_one, thread_states + i);
     threads[i].Start();
   }

@@ -105,7 +105,7 @@ void grpc_executor_set_threading(bool threading) {
       g_thread_state[i].elems = GRPC_CLOSURE_LIST_INIT;
     }
 
-    g_thread_state[0].thd = 
+    g_thread_state[0].thd =
         grpc_core::Thread("grpc_executor", executor_thread, &g_thread_state[0]);
     g_thread_state[0].thd.Start();
   } else {
@@ -264,7 +264,7 @@ static void executor_push(grpc_closure* closure, grpc_error* error,
       if (cur_thread_count < g_max_threads) {
         gpr_atm_no_barrier_store(&g_cur_threads, cur_thread_count + 1);
 
-        g_thread_state[cur_thread_count].thd = 
+        g_thread_state[cur_thread_count].thd =
             grpc_core::Thread("grpc_executor", executor_thread,
                               &g_thread_state[cur_thread_count]);
         g_thread_state[cur_thread_count].thd.Start();

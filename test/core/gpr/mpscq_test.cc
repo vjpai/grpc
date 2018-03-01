@@ -166,8 +166,7 @@ static void test_mt_multipop(void) {
   pa.start = &start;
   gpr_mu_init(&pa.mu);
   for (size_t i = 0; i < GPR_ARRAY_SIZE(pull_thds); i++) {
-    pull_thds[i] = 
-        grpc_core::Thread("grpc_multipop_pull", pull_thread, &pa);
+    pull_thds[i] = grpc_core::Thread("grpc_multipop_pull", pull_thread, &pa);
     pull_thds[i].Start();
   }
   gpr_event_set(&start, (void*)1);

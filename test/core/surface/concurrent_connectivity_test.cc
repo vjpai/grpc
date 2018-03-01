@@ -287,8 +287,8 @@ int run_concurrent_watches_with_short_timeouts_test() {
   char* localhost = gpr_strdup("localhost:54321");
 
   for (auto& th : threads) {
-    th = grpc_core::Thread("grpc_short_watches",
-                                watches_with_short_timeouts, localhost);
+    th = grpc_core::Thread("grpc_short_watches", watches_with_short_timeouts,
+                           localhost);
     th.Start();
   }
   for (auto& th : threads) {

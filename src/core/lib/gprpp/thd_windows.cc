@@ -58,12 +58,14 @@ void destroy_thread(struct thd_info* t) {
   gpr_free(t);
 }
 
-class ThreadInternalsWindows : public grpc_core::internal::ThreadInternalsInterface {
-public:
-  ThreadInternalsWindows(void (*thd_body)(void* arg), void* arg, bool* success) {
+class ThreadInternalsWindows
+    : public grpc_core::internal::ThreadInternalsInterface {
+ public:
+  ThreadInternalsWindows(void (*thd_body)(void* arg), void* arg,
+                         bool* success) {
     gpr_mu_init(&mu_);
     gpr_cv_init(&ready_);
-    
+
     HANDLE handle;
     info_ = (struct thd_info*)gpr_malloc(sizeof(*info_));
     info->thread = this;
@@ -75,29 +77,29 @@ public:
       gpr_free(info_);
       *success = false;
     } else {
-      handle = CreateThread(nullptr, 64 * 1024,
-                          [](void* v) WIN_LAMBDA -> DWORD {
-                            g_thd_info = static_cast<thd_info*>(v);
-                            gpr_mu_lock(&g_thd_info->thread->mu_);
-                            while (!g_thd_info->thread->started_) {
-                              gpr_cv_wait(&g_thd_info->thread->ready_,
-                                          &g_thd_info->thread->mu_,
-                                          gpr_inf_future(GPR_CLOCK_MONOTONIC));
-                            }
-                            gpr_mu_unlock(&g_thd_info->thread->mu_);
-                            g_thd_info->body(g_thd_info->arg);
-                            BOOL ret = SetEvent(g_thd_info->join_event);
-                            GPR_ASSERT(ret);
-                            return 0;
-                          },
-                          info, 0, nullptr);
-    if (handle == nullptr) {
-      destroy_thread(info_);
-      *success_ = false;
-    } else {
-      CloseHandle(handle);
-      *success = true;
-    }
+      handle = CreateThread(
+          nullptr, 64 * 1024,
+          [](void* v) WIN_LAMBDA -> DWORD {
+            g_thd_info = static_cast<thd_info*>(v);
+            gpr_mu_lock(&g_thd_info->thread->mu_);
+            while (!g_thd_info->thread->started_) {
+              gpr_cv_wait(&g_thd_info->thread->ready_, &g_thd_info->thread->mu_,
+                          gpr_inf_future(GPR_CLOCK_MONOTONIC));
+            }
+            gpr_mu_unlock(&g_thd_info->thread->mu_);
+            g_thd_info->body(g_thd_info->arg);
+            BOOL ret = SetEvent(g_thd_info->join_event);
+            GPR_ASSERT(ret);
+            return 0;
+          },
+          info, 0, nullptr);
+      if (handle == nullptr) {
+        destroy_thread(info_);
+        *success_ = false;
+      } else {
+        CloseHandle(handle);
+        *success = true;
+      }
     }
   }
 
@@ -118,8 +120,8 @@ public:
     GPR_ASSERT(ret == WAIT_OBJECT_0);
     destroy_thread(info_);
   }
-  
-private:
+
+ private:
   gpr_mu mu_;
   gpr_cv ready_;
   bool started_;

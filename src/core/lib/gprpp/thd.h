@@ -61,7 +61,7 @@ class Thread {
 
   /// Move constructor for thread. After this is called, the other thread
   /// no longer represents a living thread object
-  Thread(Thread&& other): state_(other.state_), impl_(other.impl_) {
+  Thread(Thread&& other) : state_(other.state_), impl_(other.impl_) {
     other.state_ = MOVED;
     other.impl_ = nullptr;
   }
@@ -120,7 +120,7 @@ class Thread {
   /// DONE -- the thread of control has completed and been joined
   /// FAILED -- the thread of control never came alive
   /// MOVED -- contents were moved out and we're no longer tracking them
-  enum ThreadState {FAKE, ALIVE, STARTED, DONE, FAILED, MOVED};
+  enum ThreadState { FAKE, ALIVE, STARTED, DONE, FAILED, MOVED };
   ThreadState state_;
   internal::ThreadInternalsInterface* impl_;
 };
