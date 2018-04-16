@@ -16,6 +16,7 @@
  *
  */
 
+#include <chrono>
 #include <cinttypes>
 #include <memory>
 #include <thread>
@@ -1075,7 +1076,7 @@ TEST_P(AsyncEnd2endTest, MetadataRpc) {
 }
 
 // Server uses AsyncNotifyWhenDone API to check for shutdown
-TEST_P(AsyncEnd2endTest, ServerCheckShutdown) {
+TEST_P(AsyncEnd2endTest, ServerCheckShutdownBeforeRpcStart) {
   ResetStub();
 
   EchoRequest send_request;
@@ -1088,17 +1089,56 @@ TEST_P(AsyncEnd2endTest, ServerCheckShutdown) {
   ServerContext srv_ctx;
   grpc::ServerAsyncResponseWriter<EchoResponse> response_writer(&srv_ctx);
 
-  // send_request.set_message(GetParam().message_content);
-  // std::unique_ptr<ClientAsyncResponseReader<EchoResponse>> response_reader(
-  //     stub_->AsyncEcho(&cli_ctx, send_request, cq_.get()));
-
   srv_ctx.AsyncNotifyWhenDone(tag(5));
-  service_.RequestEcho(&srv_ctx, &recv_request, &response_writer, cq_.get(),
+  service_->RequestEcho(&srv_ctx, &recv_request, &response_writer, cq_.get(),
                        cq_.get(), tag(2));
-  server_->Shutdown();
-  Verifier(GetParam().disable_blocking)
+  server_->Shutdown(std::chrono::system_clock::now());
+  Verifier()
       .Expect(2, false)
       .Expect(5, true)
+      .Verify(cq_.get());
+}
+
+// Server uses AsyncNotifyWhenDone API to check for shutdown after an RPC starts
+TEST_P(AsyncEnd2endTest, ServerCheckShutdownAfterRpcStart) {
+  ResetStub();
+
+  EchoRequest send_request;
+  EchoRequest recv_request;
+  EchoResponse send_response;
+  EchoResponse recv_response;
+  Status recv_status;
+
+  ClientContext cli_ctx;
+  ServerContext srv_ctx;
+  grpc::ServerAsyncResponseWriter<EchoResponse> response_writer(&srv_ctx);
+
+  send_request.set_message(GetParam().message_content);
+  std::unique_ptr<ClientAsyncResponseReader<EchoResponse>> response_reader(
+      stub_->AsyncEcho(&cli_ctx, send_request, cq_.get()));
+  response_reader->ReadInitialMetadata(tag(3));
+
+  srv_ctx.AsyncNotifyWhenDone(tag(5));
+  service_->RequestEcho(&srv_ctx, &recv_request, &response_writer, cq_.get(),
+                       cq_.get(), tag(2));  
+  Verifier()
+      .Expect(2, true)
+      .Verify(cq_.get());
+
+  response_writer.SendInitialMetadata(tag(4));
+  Verifier()
+      .Expect(3, true)
+      .Expect(4, true)
+      .Verify(cq_.get());
+
+  server_->Shutdown(std::chrono::system_clock::now());
+  Verifier()
+      .Expect(5, true)
+      .Verify(cq_.get());
+
+  response_reader->Finish(&recv_response, &recv_status, tag(6));
+  Verifier()
+      .Expect(6, true)
       .Verify(cq_.get());
 }
 
