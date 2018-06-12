@@ -260,8 +260,7 @@ class ClientAsyncReader final : public ClientAsyncReaderInterface<R> {
   }
 
   void StartCallInternal(void* tag) {
-    init_ops_.SendInitialMetadata(context_->send_initial_metadata_,
-                                  context_->initial_metadata_flags());
+    init_ops_.SendInitialMetadata(context_);
     init_ops_.set_output_tag(tag);
     call_.PerformOps(&init_ops_);
   }
@@ -418,8 +417,7 @@ class ClientAsyncWriter final : public ClientAsyncWriterInterface<W> {
   }
 
   void StartCallInternal(void* tag) {
-    write_ops_.SendInitialMetadata(context_->send_initial_metadata_,
-                                   context_->initial_metadata_flags());
+    write_ops_.SendInitialMetadata(context_);
     // if corked bit is set in context, we just keep the initial metadata
     // buffered up to coalesce with later message send. No op is performed.
     if (!context_->initial_metadata_corked_) {
@@ -532,7 +530,7 @@ class ClientAsyncReaderWriter final
     assert(started_);
     write_ops_.set_output_tag(tag);
     // TODO(ctiller): don't assert
-    GPR_CODEGEN_ASSERT(write_ops_.SendMessage(msg).ok());
+    GPR_CODEGEN_ASSERT(write_ops_.SendMessage(context_, msg).ok());
     call_.PerformOps(&write_ops_);
   }
 
@@ -544,7 +542,7 @@ class ClientAsyncReaderWriter final
       write_ops_.ClientSendClose();
     }
     // TODO(ctiller): don't assert
-    GPR_CODEGEN_ASSERT(write_ops_.SendMessage(msg, options).ok());
+    GPR_CODEGEN_ASSERT(write_ops_.SendMessage(context_, msg, options).ok());
     call_.PerformOps(&write_ops_);
   }
 
@@ -582,8 +580,7 @@ class ClientAsyncReaderWriter final
   }
 
   void StartCallInternal(void* tag) {
-    write_ops_.SendInitialMetadata(context_->send_initial_metadata_,
-                                   context_->initial_metadata_flags());
+    write_ops_.SendInitialMetadata(context_);
     // if corked bit is set in context, we just keep the initial metadata
     // buffered up to coalesce with later message send. No op is performed.
     if (!context_->initial_metadata_corked_) {
@@ -674,8 +671,7 @@ class ServerAsyncReader final : public ServerAsyncReaderInterface<W, R> {
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
     meta_ops_.set_output_tag(tag);
-    meta_ops_.SendInitialMetadata(ctx_->initial_metadata_,
-                                  ctx_->initial_metadata_flags());
+    meta_ops_.SendInitialMetadata(ctx_);
     if (ctx_->compression_level_set()) {
       meta_ops_.set_compression_level(ctx_->compression_level());
     }
@@ -700,8 +696,7 @@ class ServerAsyncReader final : public ServerAsyncReaderInterface<W, R> {
   void Finish(const W& msg, const Status& status, void* tag) override {
     finish_ops_.set_output_tag(tag);
     if (!ctx_->sent_initial_metadata_) {
-      finish_ops_.SendInitialMetadata(ctx_->initial_metadata_,
-                                      ctx_->initial_metadata_flags());
+      finish_ops_.SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         finish_ops_.set_compression_level(ctx_->compression_level());
       }
@@ -727,8 +722,7 @@ class ServerAsyncReader final : public ServerAsyncReaderInterface<W, R> {
     GPR_CODEGEN_ASSERT(!status.ok());
     finish_ops_.set_output_tag(tag);
     if (!ctx_->sent_initial_metadata_) {
-      finish_ops_.SendInitialMetadata(ctx_->initial_metadata_,
-                                      ctx_->initial_metadata_flags());
+      finish_ops_.SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         finish_ops_.set_compression_level(ctx_->compression_level());
       }
@@ -811,8 +805,7 @@ class ServerAsyncWriter final : public ServerAsyncWriterInterface<W> {
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
     meta_ops_.set_output_tag(tag);
-    meta_ops_.SendInitialMetadata(ctx_->initial_metadata_,
-                                  ctx_->initial_metadata_flags());
+    meta_ops_.SendInitialMetadata(ctx_);
     if (ctx_->compression_level_set()) {
       meta_ops_.set_compression_level(ctx_->compression_level());
     }
@@ -878,8 +871,7 @@ class ServerAsyncWriter final : public ServerAsyncWriterInterface<W> {
   template <class T>
   void EnsureInitialMetadataSent(T* ops) {
     if (!ctx_->sent_initial_metadata_) {
-      ops->SendInitialMetadata(ctx_->initial_metadata_,
-                               ctx_->initial_metadata_flags());
+      ops->SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         ops->set_compression_level(ctx_->compression_level());
       }
@@ -965,8 +957,7 @@ class ServerAsyncReaderWriter final
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
     meta_ops_.set_output_tag(tag);
-    meta_ops_.SendInitialMetadata(ctx_->initial_metadata_,
-                                  ctx_->initial_metadata_flags());
+    meta_ops_.SendInitialMetadata(ctx_);
     if (ctx_->compression_level_set()) {
       meta_ops_.set_compression_level(ctx_->compression_level());
     }
@@ -1040,8 +1031,7 @@ class ServerAsyncReaderWriter final
   template <class T>
   void EnsureInitialMetadataSent(T* ops) {
     if (!ctx_->sent_initial_metadata_) {
-      ops->SendInitialMetadata(ctx_->initial_metadata_,
-                               ctx_->initial_metadata_flags());
+      ops->SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         ops->set_compression_level(ctx_->compression_level());
       }

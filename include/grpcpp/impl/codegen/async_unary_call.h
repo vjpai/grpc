@@ -168,15 +168,12 @@ class ClientAsyncResponseReader final
       : context_(context), call_(call), started_(start) {
     // Bind the metadata at time of StartCallInternal but set up the rest here
     // TODO(ctiller): don't assert
-    GPR_CODEGEN_ASSERT(single_buf.SendMessage(request).ok());
+    GPR_CODEGEN_ASSERT(single_buf.SendMessage(context, request).ok());
     single_buf.ClientSendClose();
     if (start) StartCallInternal();
   }
 
-  void StartCallInternal() {
-    single_buf.SendInitialMetadata(context_->send_initial_metadata_,
-                                   context_->initial_metadata_flags());
-  }
+  void StartCallInternal() { single_buf.SendInitialMetadata(context_); }
 
   // disable operator new
   static void* operator new(std::size_t size);
@@ -214,8 +211,7 @@ class ServerAsyncResponseWriter final
     GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
 
     meta_buf_.set_output_tag(tag);
-    meta_buf_.SendInitialMetadata(ctx_->initial_metadata_,
-                                  ctx_->initial_metadata_flags());
+    meta_buf_.SendInitialMetadata(ctx_);
     if (ctx_->compression_level_set()) {
       meta_buf_.set_compression_level(ctx_->compression_level());
     }
@@ -241,8 +237,7 @@ class ServerAsyncResponseWriter final
   void Finish(const W& msg, const Status& status, void* tag) {
     finish_buf_.set_output_tag(tag);
     if (!ctx_->sent_initial_metadata_) {
-      finish_buf_.SendInitialMetadata(ctx_->initial_metadata_,
-                                      ctx_->initial_metadata_flags());
+      finish_buf_.SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         finish_buf_.set_compression_level(ctx_->compression_level());
       }
@@ -274,8 +269,7 @@ class ServerAsyncResponseWriter final
     GPR_CODEGEN_ASSERT(!status.ok());
     finish_buf_.set_output_tag(tag);
     if (!ctx_->sent_initial_metadata_) {
-      finish_buf_.SendInitialMetadata(ctx_->initial_metadata_,
-                                      ctx_->initial_metadata_flags());
+      finish_buf_.SendInitialMetadata(ctx_);
       if (ctx_->compression_level_set()) {
         finish_buf_.set_compression_level(ctx_->compression_level());
       }

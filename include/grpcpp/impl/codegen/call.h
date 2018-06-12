@@ -218,9 +218,11 @@ class CallOpSendInitialMetadata {
     maybe_compression_level_.is_set = false;
   }
 
-  void SendInitialMetadata(
-      const std::multimap<grpc::string, grpc::string>& metadata,
-      uint32_t flags) {
+  template <class Context>
+  void SendInitialMetadata(Context* ctx) {
+    const std::multimap<grpc::string, grpc::string>& metadata =
+        ctx->initial_metadata_;
+    uint32_t flags = ctx->initial_metadata_flags();
     maybe_compression_level_.is_set = false;
     send_ = true;
     flags_ = flags;
@@ -271,6 +273,13 @@ class CallOpSendMessage {
 
   /// Send \a message using \a options for the write. The \a options are cleared
   /// after use.
+  template <class Context, class M>
+  Status SendMessage(Context* context, const M& message,
+                     WriteOptions options) GRPC_MUST_USE_RESULT;
+
+  template <class Context, class M>
+  Status SendMessage(Context* context, const M& message) GRPC_MUST_USE_RESULT;
+
   template <class M>
   Status SendMessage(const M& message,
                      WriteOptions options) GRPC_MUST_USE_RESULT;
@@ -296,11 +305,30 @@ class CallOpSendMessage {
   WriteOptions write_options_;
 };
 
+template <class Context, class M>
+Status CallOpSendMessage::SendMessage(Context* context, const M& message,
+                                      WriteOptions options) {
+  context->MaybeInterceptPreSerialize(message);
+  write_options_ = options;
+  bool own_buf;
+  // TODO(vjpai): Remove the void's below when possible
+  // The void in the template parameter below should not be needed
+  // (since it should be implicit) but is needed due to an observed
+  // difference in behavior between clang and gcc for certain internal users
+  Status result = SerializationTraits<M, void>::Serialize(
+      message, send_buf_.bbuf_ptr(), &own_buf);
+  context->InterceptSendMessage(send_buf_);
+  if (!own_buf) {
+    send_buf_.Duplicate();
+  }
+  return result;
+}
+
 template <class M>
 Status CallOpSendMessage::SendMessage(const M& message, WriteOptions options) {
   write_options_ = options;
   bool own_buf;
-  // TODO(vjpai): Remove the void below when possible
+  // TODO(vjpai): Remove the void's below when possible
   // The void in the template parameter below should not be needed
   // (since it should be implicit) but is needed due to an observed
   // difference in behavior between clang and gcc for certain internal users
@@ -312,6 +340,10 @@ Status CallOpSendMessage::SendMessage(const M& message, WriteOptions options) {
   return result;
 }
 
+template <class Context, class M>
+Status CallOpSendMessage::SendMessage(Context* context, const M& message) {
+  return SendMessage(context, message, WriteOptions());
+}
 template <class M>
 Status CallOpSendMessage::SendMessage(const M& message) {
   return SendMessage(message, WriteOptions());

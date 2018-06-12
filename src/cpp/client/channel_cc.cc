@@ -87,13 +87,17 @@ grpc::string Channel::GetServiceConfigJSON() const {
 internal::Call Channel::CreateCall(const internal::RpcMethod& method,
                                    ClientContext* context,
                                    CompletionQueue* cq) {
+  context->InterceptStart();
   const bool kRegistered = method.channel_tag() && context->authority().empty();
   grpc_call* c_call = nullptr;
+  grpc_slice method_name;
   if (kRegistered) {
     c_call = grpc_channel_create_registered_call(
         c_channel_, context->propagate_from_call_,
         context->propagation_options_.c_bitmask(), cq->cq(),
         method.channel_tag(), context->raw_deadline(), nullptr);
+    // Registered methods are created from Stubs so their names are static
+    method_name = SliceReferencingString(method.name());
   } else {
     const char* host_str = nullptr;
     if (!context->authority().empty()) {
@@ -101,23 +105,23 @@ internal::Call Channel::CreateCall(const internal::RpcMethod& method,
     } else if (!host_.empty()) {
       host_str = host_.c_str();
     }
-    grpc_slice method_slice = SliceFromCopiedString(method.name());
+    method_name = SliceFromCopiedString(method.name());
     grpc_slice host_slice;
     if (host_str != nullptr) {
       host_slice = SliceFromCopiedString(host_str);
     }
     c_call = grpc_channel_create_call(
         c_channel_, context->propagate_from_call_,
-        context->propagation_options_.c_bitmask(), cq->cq(), method_slice,
+        context->propagation_options_.c_bitmask(), cq->cq(), method_name,
         host_str == nullptr ? nullptr : &host_slice, context->raw_deadline(),
         nullptr);
-    grpc_slice_unref(method_slice);
+    // Don't unref the method_name since it will be passed to the ClientContext
     if (host_str != nullptr) {
       grpc_slice_unref(host_slice);
     }
   }
   grpc_census_call_set_context(c_call, context->census_context());
-  context->set_call(c_call, shared_from_this());
+  context->set_call(c_call, method_name, shared_from_this());
   return internal::Call(c_call, this, cq);
 }
 

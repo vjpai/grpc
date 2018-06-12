@@ -42,6 +42,7 @@
 #include <grpc/impl/codegen/compression_types.h>
 #include <grpc/impl/codegen/propagation_bits.h>
 #include <grpcpp/impl/codegen/config.h>
+#include <grpcpp/impl/codegen/config_protobuf.h>
 #include <grpcpp/impl/codegen/core_codegen_interface.h>
 #include <grpcpp/impl/codegen/create_auth_context.h>
 #include <grpcpp/impl/codegen/metadata_map.h>
@@ -56,6 +57,7 @@ struct grpc_call;
 
 namespace grpc {
 
+class ByteBuffer;
 class Channel;
 class ChannelInterface;
 class CompletionQueue;
@@ -66,6 +68,10 @@ namespace internal {
 class RpcMethod;
 class CallOpClientRecvStatus;
 class CallOpRecvInitialMetadata;
+template <class R>
+class CallOpRecvMessage;
+class CallOpSendInitialMetadata;
+class CallOpSendMessage;
 template <class InputMessage, class OutputMessage>
 class BlockingUnaryCallImpl;
 }  // namespace internal
@@ -351,11 +357,72 @@ class ClientContext {
     virtual void DefaultConstructor(ClientContext* context) = 0;
     virtual void Destructor(ClientContext* context) = 0;
   };
-  static void SetGlobalCallbacks(GlobalCallbacks* callbacks);
+  static void SetGlobalCallbacks(GlobalCallbacks* callbackfs);
 
   /// Should be used for framework-level extensions only.
   /// Applications never need to call this method.
   grpc_call* c_call() { return call_; }
+
+  ///
+  /// Global interception for client-side RPCs
+  /// All interceptors must be added before any RPCs are actually started.
+  /// Give default empty implementations of each method so that implementations
+  /// only need to override their methods of interest
+  ///
+  class ClientInterceptor {
+   public:
+    // RpcInfo is a limited view of the most important fields of the context
+    // The fields are alive only for as long as the hook is running and
+    // should not be captured
+    class RpcInfo final {
+     public:
+      RpcInfo(ClientContext* ctx, grpc::string_ref method,
+              const Channel* channel)
+          : ctx_(ctx), method_(method), channel_(channel) {}
+      ~RpcInfo() {}
+
+      // Getters
+      ClientContext* context() { return ctx_; }
+      const char* method() { return method_.data(); }
+      const Channel* channel() { return channel_; }
+
+      // Member functions for processing/transforming send initial metadata
+      const std::multimap<grpc::string, grpc::string>* client_initial_metadata()
+          const {
+        return &ctx_->initial_metadata_;
+      }
+      void set_client_initial_metadata(
+          const std::multimap<grpc::string, grpc::string>& overwrite) {
+        ctx_->initial_metadata_ = overwrite;
+      }
+
+      // Member functions for processing initial metadata from server
+      const std::multimap<grpc::string_ref, grpc::string_ref>*
+      server_initial_metadata() const {
+        return ctx_->recv_initial_metadata_.map();
+      }
+
+      // Member functions for processing trailing metadata from server
+      const std::multimap<grpc::string_ref, grpc::string_ref>*
+      server_trailing_metadata() const {
+        return ctx_->trailing_metadata_.map();
+      }
+
+     private:
+      ClientContext* ctx_;
+      grpc::string_ref method_;
+      const Channel* channel_;
+    };
+    virtual ~ClientInterceptor() {}
+    virtual void PreStart(RpcInfo*) {}
+    virtual void PreSerialize(RpcInfo*, const grpc::protobuf::Message&) {}
+    virtual void PreSendMsg(RpcInfo*, const ByteBuffer&) {}
+    virtual void PostRecvInitialMetadata(RpcInfo*) {}
+    virtual void PostRecvMsg(RpcInfo*, const ByteBuffer&) {}
+    virtual void PostDeserialize(RpcInfo*, const grpc::protobuf::Message&) {}
+    virtual void PostRecvStatus(RpcInfo*) {}
+  };
+  static void AddClientInterceptor(ClientInterceptor* interceptor);
 
   /// EXPERIMENTAL debugging API
   ///
@@ -372,6 +439,10 @@ class ClientContext {
   friend class ::grpc::testing::InteropClientContextInspector;
   friend class ::grpc::internal::CallOpClientRecvStatus;
   friend class ::grpc::internal::CallOpRecvInitialMetadata;
+  template <class R>
+  friend class ::grpc::internal::CallOpRecvMessage;
+  friend class ::grpc::internal::CallOpSendInitialMetadata;
+  friend class ::grpc::internal::CallOpSendMessage;
   friend class Channel;
   template <class R>
   friend class ::grpc::ClientReader;
@@ -396,7 +467,8 @@ class ClientContext {
   }
 
   grpc_call* call() const { return call_; }
-  void set_call(grpc_call* call, const std::shared_ptr<Channel>& channel);
+  void set_call(grpc_call* call, grpc_slice method_name,
+                const std::shared_ptr<Channel>& channel);
 
   uint32_t initial_metadata_flags() const {
     return (idempotent_ ? GRPC_INITIAL_METADATA_IDEMPOTENT_REQUEST : 0) |
@@ -410,6 +482,39 @@ class ClientContext {
 
   grpc::string authority() { return authority_; }
 
+  void InterceptStart();
+  void InterceptPreSerializeProtobuf(const grpc::protobuf::Message& message);
+  void InterceptSendMessage(const ByteBuffer& buf);
+  void InterceptRecvInitialMetadata();
+  void InterceptRecvMessage(const ByteBuffer& buf);
+  void InterceptPostDeserializeProtobuf(const grpc::protobuf::Message& message);
+  void InterceptRecvStatus();
+
+  template <class M>
+  typename std::enable_if<
+      std::is_base_of<grpc::protobuf::Message, M>::value>::type
+  MaybeInterceptPreSerialize(const M& message) {
+    InterceptPreSerializeProtobuf(message);
+  }
+  template <class M>
+  typename std::enable_if<
+      !std::is_base_of<grpc::protobuf::Message, M>::value>::type
+  MaybeInterceptPreSerialize(const M& message) {
+    return;
+  }
+  template <class M>
+  typename std::enable_if<
+      std::is_base_of<grpc::protobuf::Message, M>::value>::type
+  MaybeInterceptPostDeserialize(const M& message) {
+    InterceptPostDeserializeProtobuf(message);
+  }
+  template <class M>
+  typename std::enable_if<
+      !std::is_base_of<grpc::protobuf::Message, M>::value>::type
+  MaybeInterceptPostDeserialize(const M& message) {
+    return;
+  }
+
   bool initial_metadata_received_;
   bool wait_for_ready_;
   bool wait_for_ready_explicitly_set_;
@@ -418,13 +523,14 @@ class ClientContext {
   std::shared_ptr<Channel> channel_;
   std::mutex mu_;
   grpc_call* call_;
+  grpc_slice method_;
   bool call_canceled_;
   gpr_timespec deadline_;
   grpc::string authority_;
   std::shared_ptr<CallCredentials> creds_;
   mutable std::shared_ptr<const AuthContext> auth_context_;
   struct census_context* census_context_;
-  std::multimap<grpc::string, grpc::string> send_initial_metadata_;
+  std::multimap<grpc::string, grpc::string> initial_metadata_;
   internal::MetadataMap recv_initial_metadata_;
   internal::MetadataMap trailing_metadata_;
 

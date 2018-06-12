@@ -63,6 +63,7 @@ ClientContext::~ClientContext() {
   if (call_) {
     grpc_call_unref(call_);
   }
+  grpc_slice_unref(method_);
   g_client_callbacks->Destructor(this);
 }
 
@@ -76,14 +77,15 @@ std::unique_ptr<ClientContext> ClientContext::FromServerContext(
 
 void ClientContext::AddMetadata(const grpc::string& meta_key,
                                 const grpc::string& meta_value) {
-  send_initial_metadata_.insert(std::make_pair(meta_key, meta_value));
+  initial_metadata_.insert(std::make_pair(meta_key, meta_value));
 }
 
-void ClientContext::set_call(grpc_call* call,
+void ClientContext::set_call(grpc_call* call, grpc_slice method_name,
                              const std::shared_ptr<Channel>& channel) {
   std::unique_lock<std::mutex> lock(mu_);
   GPR_ASSERT(call_ == nullptr);
   call_ = call;
+  method_ = grpc_slice_ref(method_name);
   channel_ = channel;
   if (creds_ && !creds_->ApplyToCall(call_)) {
     grpc_call_cancel_with_status(call, GRPC_STATUS_CANCELLED,
@@ -131,6 +133,56 @@ void ClientContext::SetGlobalCallbacks(GlobalCallbacks* client_callbacks) {
   GPR_ASSERT(client_callbacks != nullptr);
   GPR_ASSERT(client_callbacks != &g_default_client_callbacks);
   g_client_callbacks = client_callbacks;
+}
+
+namespace {
+std::shared_ptr<std::vector<ClientContext::ClientInterceptor*>> g_interceptors =
+    nullptr;
+gpr_once g_once_init_interceptors = GPR_ONCE_INIT;
+}  // namespace
+
+void ClientContext::AddClientInterceptor(
+    ClientContext::ClientInterceptor* interceptor) {
+  gpr_once_init(&g_once_init_interceptors, [] {
+    if (!g_interceptors) {
+      g_interceptors.reset(new std::vector<ClientContext::ClientInterceptor*>);
+    }
+  });
+  g_interceptors->push_back(interceptor);
+}
+
+void ClientContext::InterceptStart() {
+  if (g_interceptors == nullptr) {
+    return;
+  }
+  ClientInterceptor::RpcInfo info(this, StringRefFromSlice(&method_),
+                                  channel_.get());
+  for (auto* intercept : *g_interceptors) {
+    intercept->PreStart(&info);
+  }
+}
+
+void ClientContext::InterceptPreSerializeProtobuf(
+    const grpc::protobuf::Message& message) {
+  if (g_interceptors == nullptr) {
+    return;
+  }
+  ClientInterceptor::RpcInfo info(this, StringRefFromSlice(&method_),
+                                  channel_.get());
+  for (auto* intercept : *g_interceptors) {
+    intercept->PreSerialize(&info, message);
+  }
+}
+
+void ClientContext::InterceptSendMessage(const ByteBuffer& message) {
+  if (g_interceptors == nullptr) {
+    return;
+  }
+  ClientInterceptor::RpcInfo info(this, StringRefFromSlice(&method_),
+                                  channel_.get());
+  for (auto* intercept : *g_interceptors) {
+    intercept->PreSendMsg(&info, message);
+  }
 }
 
 }  // namespace grpc

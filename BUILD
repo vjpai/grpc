@@ -1911,6 +1911,7 @@ grpc_cc_library(
     deps = [
         "grpc",
         "grpc++_codegen_base",
+        "grpc++_config_proto",
     ],
 )
 
@@ -1922,6 +1923,7 @@ grpc_cc_library(
     public_hdrs = GRPCXX_PUBLIC_HDRS,
     deps = [
         "grpc++_codegen_base",
+        "grpc++_config_proto",
         "grpc_unsecure",
     ],
 )

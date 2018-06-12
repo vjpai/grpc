@@ -73,8 +73,7 @@ class RpcMethodHandler : public MethodHandler {
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
               CallOpServerSendStatus>
         ops;
-    ops.SendInitialMetadata(param.server_context->initial_metadata_,
-                            param.server_context->initial_metadata_flags());
+    ops.SendInitialMetadata(param.server_context);
     if (param.server_context->compression_level_set()) {
       ops.set_compression_level(param.server_context->compression_level());
     }
@@ -117,8 +116,7 @@ class ClientStreamingHandler : public MethodHandler {
               CallOpServerSendStatus>
         ops;
     if (!param.server_context->sent_initial_metadata_) {
-      ops.SendInitialMetadata(param.server_context->initial_metadata_,
-                              param.server_context->initial_metadata_flags());
+      ops.SendInitialMetadata(param.server_context);
       if (param.server_context->compression_level_set()) {
         ops.set_compression_level(param.server_context->compression_level());
       }
@@ -163,8 +161,7 @@ class ServerStreamingHandler : public MethodHandler {
 
     CallOpSet<CallOpSendInitialMetadata, CallOpServerSendStatus> ops;
     if (!param.server_context->sent_initial_metadata_) {
-      ops.SendInitialMetadata(param.server_context->initial_metadata_,
-                              param.server_context->initial_metadata_flags());
+      ops.SendInitialMetadata(param.server_context);
       if (param.server_context->compression_level_set()) {
         ops.set_compression_level(param.server_context->compression_level());
       }
@@ -206,8 +203,7 @@ class TemplatedBidiStreamingHandler : public MethodHandler {
 
     CallOpSet<CallOpSendInitialMetadata, CallOpServerSendStatus> ops;
     if (!param.server_context->sent_initial_metadata_) {
-      ops.SendInitialMetadata(param.server_context->initial_metadata_,
-                              param.server_context->initial_metadata_flags());
+      ops.SendInitialMetadata(param.server_context);
       if (param.server_context->compression_level_set()) {
         ops.set_compression_level(param.server_context->compression_level());
       }
@@ -279,8 +275,7 @@ class UnknownMethodHandler : public MethodHandler {
   static void FillOps(ServerContext* context, T* ops) {
     Status status(StatusCode::UNIMPLEMENTED, "");
     if (!context->sent_initial_metadata_) {
-      ops->SendInitialMetadata(context->initial_metadata_,
-                               context->initial_metadata_flags());
+      ops->SendInitialMetadata(context);
       if (context->compression_level_set()) {
         ops->set_compression_level(context->compression_level());
       }

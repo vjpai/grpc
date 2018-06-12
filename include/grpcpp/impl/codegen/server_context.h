@@ -67,6 +67,7 @@ class UnknownMethodHandler;
 template <class Streamer, bool WriteNeeded>
 class TemplatedBidiStreamingHandler;
 class Call;
+class CallOpSendInitialMetadata;
 }  // namespace internal
 
 class CompletionQueue;
@@ -235,6 +236,12 @@ class ServerContext {
   /// Applications never need to call this method.
   grpc_call* c_call() { return call_; }
 
+  /// Global server interceptor
+  class ServerInterceptor {
+    virtual ~ServerInterceptor() {}
+  };
+  static void SetGlobalServerInterceptor(ServerInterceptor* interceptor);
+
  private:
   friend class ::grpc::testing::InteropServerContextInspector;
   friend class ::grpc::testing::ServerContextTestSpouse;
@@ -264,6 +271,7 @@ class ServerContext {
   friend class ::grpc::internal::TemplatedBidiStreamingHandler;
   friend class ::grpc::internal::UnknownMethodHandler;
   friend class ::grpc::ClientContext;
+  friend class ::grpc::internal::CallOpSendInitialMetadata;
 
   /// Prevent copying.
   ServerContext(const ServerContext&);

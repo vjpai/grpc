@@ -57,12 +57,11 @@ class BlockingUnaryCallImpl {
               CallOpRecvInitialMetadata, CallOpRecvMessage<OutputMessage>,
               CallOpClientSendClose, CallOpClientRecvStatus>
         ops;
-    status_ = ops.SendMessage(request);
+    status_ = ops.SendMessage(context, request);
     if (!status_.ok()) {
       return;
     }
-    ops.SendInitialMetadata(context->send_initial_metadata_,
-                            context->initial_metadata_flags());
+    ops.SendInitialMetadata(context);
     ops.RecvInitialMetadata(context);
     ops.RecvMessage(result);
     ops.AllowNoMessage();
