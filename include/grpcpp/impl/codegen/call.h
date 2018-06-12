@@ -547,6 +547,7 @@ class CallOpRecvInitialMetadata {
   CallOpRecvInitialMetadata() : metadata_map_(nullptr) {}
 
   void RecvInitialMetadata(ClientContext* context) {
+    context_ = context;
     context->initial_metadata_received_ = true;
     metadata_map_ = &context->recv_initial_metadata_;
   }
@@ -565,9 +566,11 @@ class CallOpRecvInitialMetadata {
     if (metadata_map_ == nullptr) return;
     metadata_map_->FillMap();
     metadata_map_ = nullptr;
+    context_->InterceptRecvInitialMetadata();
   }
 
  private:
+  ClientContext* context_;
   MetadataMap* metadata_map_;
 };
 

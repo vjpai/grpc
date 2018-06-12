@@ -185,4 +185,15 @@ void ClientContext::InterceptSendMessage(const ByteBuffer& message) {
   }
 }
 
+void ClientContext::InterceptRecvInitialMetadata() {
+  if (g_interceptors == nullptr) {
+    return;
+  }
+  ClientInterceptor::RpcInfo info(this, StringRefFromSlice(&method_),
+                                  channel_.get());
+  for (auto* intercept : *g_interceptors) {
+    intercept->PostRecvInitialMetadata(&info);
+  }
+}
+
 }  // namespace grpc

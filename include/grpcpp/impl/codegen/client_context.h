@@ -401,11 +401,31 @@ class ClientContext {
       server_initial_metadata() const {
         return ctx_->recv_initial_metadata_.map();
       }
+      std::multimap<grpc::string, grpc::string>
+      server_initial_metadata_as_strings() const {
+        const auto* map = ctx_->recv_initial_metadata_.map();
+        std::multimap<grpc::string, grpc::string> ret;
+        for (auto entry : *map) {
+          ret.insert({grpc::string(entry.first.begin(), entry.first.end()),
+                      grpc::string(entry.second.begin(), entry.second.end())});
+        }
+        return ret;
+      }
 
       // Member functions for processing trailing metadata from server
       const std::multimap<grpc::string_ref, grpc::string_ref>*
       server_trailing_metadata() const {
         return ctx_->trailing_metadata_.map();
+      }
+      std::multimap<grpc::string, grpc::string>
+      server_trailing_metadata_as_strings() const {
+        const auto* map = ctx_->trailing_metadata_.map();
+        std::multimap<grpc::string, grpc::string> ret;
+        for (auto entry : *map) {
+          ret.insert({grpc::string(entry.first.begin(), entry.first.end()),
+                      grpc::string(entry.second.begin(), entry.second.end())});
+        }
+        return ret;
       }
 
      private:

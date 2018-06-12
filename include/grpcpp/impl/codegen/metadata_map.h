@@ -28,8 +28,11 @@ class MetadataMap {
  public:
   MetadataMap() { memset(&arr_, 0, sizeof(arr_)); }
 
-  ~MetadataMap() {
+  ~MetadataMap() { Clear(); }
+
+  void Clear() {
     g_core_codegen_interface->grpc_metadata_array_destroy(&arr_);
+    map_.clear();
   }
 
   void FillMap() {
