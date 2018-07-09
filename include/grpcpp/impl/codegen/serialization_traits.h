@@ -57,6 +57,29 @@ template <class Message,
           class UnusedButHereForPartialTemplateSpecialization = void>
 class SerializationTraits;
 
+/// Define new classes that are meant to type-erase a message
+/// and only convey the fact that something can go through
+/// serialization. These are used by the interception API. Code should only
+/// use the interception API if SerializationTraits for all message types
+/// is idempotent and actually gives the caller an owned buffer on Serialize
+/// (both of which are true for gRPC's protobuf and ByteBuffer definitions)
+
+class Serializable {
+ public:
+  template <class M>
+  Serializable(const M& msg);
+
+  Status Serialize(ByteBuffer* buffer);
+
+  size_t Length() const;
+ private:
+  std::function<Status(ByteBuffer*)> serialize_;
+  std::function<size_t()> length_;
+};
+
+}  // namespace internal
+
+
 }  // namespace grpc
 
 #endif  // GRPCPP_IMPL_CODEGEN_SERIALIZATION_TRAITS_H
