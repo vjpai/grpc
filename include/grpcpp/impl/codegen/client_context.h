@@ -357,7 +357,7 @@ class ClientContext {
     virtual void DefaultConstructor(ClientContext* context) = 0;
     virtual void Destructor(ClientContext* context) = 0;
   };
-  static void SetGlobalCallbacks(GlobalCallbacks* callbackfs);
+  static void SetGlobalCallbacks(GlobalCallbacks* callbacks);
 
   /// Should be used for framework-level extensions only.
   /// Applications never need to call this method.
