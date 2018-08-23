@@ -126,7 +126,7 @@ internal::Call Channel::CreateCall(const internal::RpcMethod& method,
   }
   grpc_census_call_set_context(c_call, context->census_context());
   context->set_call(c_call, shared_from_this());
-  return internal::Call(c_call, this, cq);
+  return internal::Call(c_call, this, cq->cq());
 }
 
 void Channel::PerformOpsOnCall(internal::CallOpSetInterface* ops,

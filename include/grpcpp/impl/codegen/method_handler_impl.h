@@ -82,8 +82,8 @@ class RpcMethodHandler : public MethodHandler {
       status = ops.SendMessage(rsp);
     }
     ops.ServerSendStatus(param.server_context->trailing_metadata_, status);
-    param.call->PerformOps(&ops);
-    param.call->cq()->Pluck(&ops);
+    param.call()->PerformOps(&ops);
+    param.Pluck(&ops);
   }
 
  private:
@@ -107,7 +107,7 @@ class ClientStreamingHandler : public MethodHandler {
       : func_(func), service_(service) {}
 
   void RunHandler(const HandlerParameter& param) final {
-    ServerReader<RequestType> reader(param.call, param.server_context);
+    ServerReader<RequestType> reader(param.call(), param.server_context);
     ResponseType rsp;
     Status status = CatchingFunctionHandler([this, &param, &reader, &rsp] {
       return func_(service_, param.server_context, &reader, &rsp);
@@ -127,8 +127,8 @@ class ClientStreamingHandler : public MethodHandler {
       status = ops.SendMessage(rsp);
     }
     ops.ServerSendStatus(param.server_context->trailing_metadata_, status);
-    param.call->PerformOps(&ops);
-    param.call->cq()->Pluck(&ops);
+    param.call()->PerformOps(&ops);
+    param.Pluck(&ops);
   }
 
  private:
@@ -155,7 +155,7 @@ class ServerStreamingHandler : public MethodHandler {
         param.request.bbuf_ptr(), &req);
 
     if (status.ok()) {
-      ServerWriter<ResponseType> writer(param.call, param.server_context);
+      ServerWriter<ResponseType> writer(param.call(), param.server_context);
       status = CatchingFunctionHandler([this, &param, &req, &writer] {
         return func_(service_, param.server_context, &req, &writer);
       });
@@ -170,11 +170,11 @@ class ServerStreamingHandler : public MethodHandler {
       }
     }
     ops.ServerSendStatus(param.server_context->trailing_metadata_, status);
-    param.call->PerformOps(&ops);
+    param.call()->PerformOps(&ops);
     if (param.server_context->has_pending_ops_) {
-      param.call->cq()->Pluck(&param.server_context->pending_ops_);
+      param.Pluck(&param.server_context->pending_ops_);
     }
-    param.call->cq()->Pluck(&ops);
+    param.Pluck(&ops);
   }
 
  private:
@@ -199,7 +199,7 @@ class TemplatedBidiStreamingHandler : public MethodHandler {
       : func_(func), write_needed_(WriteNeeded) {}
 
   void RunHandler(const HandlerParameter& param) final {
-    Streamer stream(param.call, param.server_context);
+    Streamer stream(param.call(), param.server_context);
     Status status = CatchingFunctionHandler([this, &param, &stream] {
       return func_(param.server_context, &stream);
     });
@@ -219,11 +219,11 @@ class TemplatedBidiStreamingHandler : public MethodHandler {
       }
     }
     ops.ServerSendStatus(param.server_context->trailing_metadata_, status);
-    param.call->PerformOps(&ops);
+    param.call()->PerformOps(&ops);
     if (param.server_context->has_pending_ops_) {
-      param.call->cq()->Pluck(&param.server_context->pending_ops_);
+      param.Pluck(&param.server_context->pending_ops_);
     }
-    param.call->cq()->Pluck(&ops);
+    param.Pluck(&ops);
   }
 
  private:
@@ -294,8 +294,8 @@ class ErrorMethodHandler : public MethodHandler {
   void RunHandler(const HandlerParameter& param) final {
     CallOpSet<CallOpSendInitialMetadata, CallOpServerSendStatus> ops;
     FillOps(param.server_context, &ops);
-    param.call->PerformOps(&ops);
-    param.call->cq()->Pluck(&ops);
+    param.call()->PerformOps(&ops);
+    param.Pluck(&ops);
     // We also have to destroy any request payload in the handler parameter
     ByteBuffer* payload = param.request.bbuf_ptr();
     if (payload != nullptr) {

@@ -39,16 +39,31 @@ namespace internal {
 class MethodHandler {
  public:
   virtual ~MethodHandler() {}
-  struct HandlerParameter {
+  class HandlerParameter {
+   public:
     HandlerParameter(Call* c, ServerContext* context, grpc_byte_buffer* req)
         : call(c), server_context(context) {
       request.set_buffer(req);
     }
     ~HandlerParameter() { request.Release(); }
-    Call* call;
-    ServerContext* server_context;
+    bool Pluck(internal::CompletionQueueTag* tag) {
+      auto deadline =
+          g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME);
+      auto ev = g_core_codegen_interface->grpc_completion_queue_pluck(
+          call->cq(), tag, deadline, nullptr);
+      bool ok = ev.success != 0;
+      void* ignored = tag;
+      GPR_CODEGEN_ASSERT(tag->FinalizeResult(&ignored, &ok));
+      GPR_CODEGEN_ASSERT(ignored == tag);
+      // Ignore mutations by FinalizeResult: Pluck returns the C API status
+      return ev.success != 0;
+    }
+    Call* call() { return call_; }
+   private:
+    Call* call_;
+    ServerContext* server_context_;
     // Handler required to destroy these contents
-    ByteBuffer request;
+    ByteBuffer request_;
   };
   virtual void RunHandler(const HandlerParameter& param) = 0;
 };
