@@ -75,6 +75,21 @@ class ServerStreamingInterface {
   /// The initial metadata that will be sent to the client will be
   /// taken from the \a ServerContext associated with the call.
   virtual void SendInitialMetadata() = 0;
+
+ protected:
+  /// This is a helper method for use by all children
+  static bool Pluck(Call* call, CompletionQueueTag* tag) {
+    auto deadline =
+        g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME);
+    auto ev = g_core_codegen_interface->grpc_completion_queue_pluck(
+								    call->cq(), tag, deadline, nullptr);
+    bool ok = ev.success != 0;
+    void* ignored = tag;
+    GPR_CODEGEN_ASSERT(tag->FinalizeResult(&ignored, &ok));
+    GPR_CODEGEN_ASSERT(ignored == tag);
+    // Ignore mutations by FinalizeResult: Pluck returns the C API status
+    return ev.success != 0;    
+  }
 };
 
 /// An interface that yields a sequence of messages of type \a R.
@@ -590,7 +605,7 @@ class ServerReader final : public ServerReaderInterface<R> {
     }
     ctx_->sent_initial_metadata_ = true;
     call_->PerformOps(&ops);
-    call_->cq()->Pluck(&ops);
+    Pluck(call_, &ops);
   }
 
   bool NextMessageSize(uint32_t* sz) override {
@@ -602,7 +617,7 @@ class ServerReader final : public ServerReaderInterface<R> {
     internal::CallOpSet<internal::CallOpRecvMessage<R>> ops;
     ops.RecvMessage(msg);
     call_->PerformOps(&ops);
-    return call_->cq()->Pluck(&ops) && ops.got_message;
+    return Pluck(call_, &ops) && ops.got_message;
   }
 
  private:
@@ -642,7 +657,7 @@ class ServerWriter final : public ServerWriterInterface<W> {
     }
     ctx_->sent_initial_metadata_ = true;
     call_->PerformOps(&ops);
-    call_->cq()->Pluck(&ops);
+    internal::ServerStreamingInterface::Pluck(call_, &ops);
   }
 
   /// See the \a WriterInterface.Write method for semantics.
@@ -676,7 +691,7 @@ class ServerWriter final : public ServerWriterInterface<W> {
       return true;
     }
     ctx_->has_pending_ops_ = false;
-    return call_->cq()->Pluck(&ctx_->pending_ops_);
+    return internal::ServerStreamingInterface::Pluck(call_, &ctx_->pending_ops_);
   }
 
  private:
@@ -715,7 +730,7 @@ class ServerReaderWriterBody final {
     }
     ctx_->sent_initial_metadata_ = true;
     call_->PerformOps(&ops);
-    call_->cq()->Pluck(&ops);
+    internal::ServerStreamingInterface::Pluck(call_, &ops);
   }
 
   bool NextMessageSize(uint32_t* sz) {
@@ -727,7 +742,7 @@ class ServerReaderWriterBody final {
     CallOpSet<CallOpRecvMessage<R>> ops;
     ops.RecvMessage(msg);
     call_->PerformOps(&ops);
-    return call_->cq()->Pluck(&ops) && ops.got_message;
+    return internal::ServerStreamingInterface::Pluck(call_, &ops) && ops.got_message;
   }
 
   bool Write(const W& msg, WriteOptions options) {
@@ -754,7 +769,7 @@ class ServerReaderWriterBody final {
       return true;
     }
     ctx_->has_pending_ops_ = false;
-    return call_->cq()->Pluck(&ctx_->pending_ops_);
+    return internal::ServerStreamingInterface::Pluck(call_, &ctx_->pending_ops_);
   }
 
  private:

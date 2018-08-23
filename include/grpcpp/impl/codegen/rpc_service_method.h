@@ -27,6 +27,8 @@
 
 #include <grpc/impl/codegen/log.h>
 #include <grpcpp/impl/codegen/byte_buffer.h>
+#include <grpcpp/impl/codegen/call.h>
+#include <grpcpp/impl/codegen/completion_queue_tag.h>
 #include <grpcpp/impl/codegen/config.h>
 #include <grpcpp/impl/codegen/rpc_method.h>
 #include <grpcpp/impl/codegen/status.h>
@@ -42,15 +44,15 @@ class MethodHandler {
   class HandlerParameter {
    public:
     HandlerParameter(Call* c, ServerContext* context, grpc_byte_buffer* req)
-        : call(c), server_context(context) {
-      request.set_buffer(req);
+        : call_(c), server_context_(context) {
+      request_.set_buffer(req);
     }
-    ~HandlerParameter() { request.Release(); }
-    bool Pluck(internal::CompletionQueueTag* tag) {
+    ~HandlerParameter() { request_.Release(); }
+    bool Pluck(CompletionQueueTag* tag) const {
       auto deadline =
           g_core_codegen_interface->gpr_inf_future(GPR_CLOCK_REALTIME);
       auto ev = g_core_codegen_interface->grpc_completion_queue_pluck(
-          call->cq(), tag, deadline, nullptr);
+          call_->cq(), tag, deadline, nullptr);
       bool ok = ev.success != 0;
       void* ignored = tag;
       GPR_CODEGEN_ASSERT(tag->FinalizeResult(&ignored, &ok));
@@ -58,7 +60,9 @@ class MethodHandler {
       // Ignore mutations by FinalizeResult: Pluck returns the C API status
       return ev.success != 0;
     }
-    Call* call() { return call_; }
+    Call* call() const { return call_; }
+    ByteBuffer* bbuf_ptr() const { return request_.bbuf_ptr(); }
+    ServerContext* ctx() const { return server_context_; }
    private:
     Call* call_;
     ServerContext* server_context_;
