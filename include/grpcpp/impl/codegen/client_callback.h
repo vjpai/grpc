@@ -125,6 +125,13 @@ class ClientCallbackReader {
     assert(size == sizeof(ClientCallbackReader));
   }
 
+  // This operator should never be called as the memory should be freed as part
+  // of the arena destruction. It only exists to provide a matching operator
+  // delete to the operator new so that some compilers will not complain (see
+  // https://github.com/grpc/grpc/issues/11301) Note at the time of adding this
+  // there are no tests catching the compiler warning.
+  static void operator delete(void*, void*) { assert(0); }
+
   void StartCall(std::function<void(Status)> on_completion) {
     StartCall(std::move(on_completion), nullptr);
   }
@@ -219,6 +226,13 @@ class ClientCallbackWriter final {
   static void operator delete(void* ptr, std::size_t size) {
     assert(size == sizeof(ClientCallbackWriter));
   }
+
+  // This operator should never be called as the memory should be freed as part
+  // of the arena destruction. It only exists to provide a matching operator
+  // delete to the operator new so that some compilers will not complain (see
+  // https://github.com/grpc/grpc/issues/11301) Note at the time of adding this
+  // there are no tests catching the compiler warning.
+  static void operator delete(void*, void*) { assert(0); }
 
   void StartCall(std::function<void(Status)> on_completion) {
     StartCall(std::move(on_completion), nullptr);
