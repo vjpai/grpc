@@ -54,6 +54,10 @@ class ClientAsyncResponseReaderFactory;
 }  // namespace internal
 
 namespace experimental {
+template <class R>
+class ClientCallbackReaderFactory;
+template <class W>
+class ClientCallbackWriterFactory;
 template <class W, class R>
 class ClientCallbackReaderWriterFactory;
 }  // namespace experimental
@@ -108,6 +112,10 @@ class ChannelInterface {
   friend class ::grpc::internal::ClientAsyncReaderWriterFactory;
   template <class R>
   friend class ::grpc::internal::ClientAsyncResponseReaderFactory;
+  template <class R>
+  friend class ::grpc::experimental::ClientCallbackReaderFactory;
+  template <class W>
+  friend class ::grpc::experimental::ClientCallbackWriterFactory;
   template <class W, class R>
   friend class ::grpc::experimental::ClientCallbackReaderWriterFactory;
   template <class InputMessage, class OutputMessage>

@@ -73,6 +73,10 @@ class CallbackUnaryCallImpl;
 }  // namespace internal
 
 namespace experimental {
+template <class R>
+class ClientCallbackReader;
+template <class W>
+class ClientCallbackWriter;
 template <class W, class R>
 class ClientCallbackReaderWriter;
 }  // namespace experimental
@@ -398,6 +402,10 @@ class ClientContext {
   friend class ::grpc::internal::BlockingUnaryCallImpl;
   template <class InputMessage, class OutputMessage>
   friend class ::grpc::internal::CallbackUnaryCallImpl;
+  template <class R>
+  friend class ::grpc::experimental::ClientCallbackReader;
+  template <class W>
+  friend class ::grpc::experimental::ClientCallbackWriter;
   template <class W, class R>
   friend class ::grpc::experimental::ClientCallbackReaderWriter;
 

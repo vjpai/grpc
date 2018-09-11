@@ -97,6 +97,231 @@ class CallbackUnaryCallImpl {
 namespace experimental {
 
 // Forward declaration
+template <class R>
+class ClientCallbackReader;
+
+/// TODO(vjpai): Put this factory into ::grpc::internal when possible
+template <class R>
+class ClientCallbackReaderFactory {
+ public:
+  template <class W>
+  static ::grpc::experimental::ClientCallbackReader<R>* Create(
+      ::grpc::ChannelInterface* channel,
+      const ::grpc::internal::RpcMethod& method, ClientContext* context,
+      const W* request) {
+    ::grpc::internal::Call call =
+        channel->CreateCall(method, context, channel->CallbackCQ());
+    return new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call.call(), sizeof(::grpc::experimental::ClientCallbackReader<R>)))::
+        grpc::experimental::ClientCallbackReader<R>(call, context, request);
+  }
+};
+
+template <class R>
+class ClientCallbackReader {
+ public:
+  // always allocated against a call arena, no memory free required
+  static void operator delete(void* ptr, std::size_t size) {
+    assert(size == sizeof(ClientCallbackReader));
+  }
+
+  void StartCall(std::function<void(Status)> on_completion) {
+    StartCall(std::move(on_completion), nullptr);
+  }
+
+  void StartCall(std::function<void(Status)> on_completion,
+                 std::function<void(bool)> on_metadata_available) {
+    // This call may initiate two batches
+    // 1. All sends + recv initial metadata, optional callback
+    // 2. Recv trailing metadata, on_completion callback
+    auto* tag1 = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithSuccessTag)))::grpc::
+        internal::CallbackWithSuccessTag(
+            call_.call(),
+            on_metadata_available ? on_metadata_available : [](bool) {},
+            &start_ops_);
+
+    if (!context_->initial_metadata_corked_) {
+      start_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                     context_->initial_metadata_flags());
+    }
+    start_ops_.RecvInitialMetadata(context_);
+    start_ops_.set_cq_tag(tag1->tag());
+    call_.PerformOps(&start_ops_);
+
+    auto* tag2 = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithStatusTag)))::grpc::
+        internal::CallbackWithStatusTag(call_.call(), on_completion,
+                                        &finish_ops_);
+
+    finish_ops_.ClientRecvStatus(context_, tag2->status_ptr());
+    finish_ops_.set_cq_tag(tag2->tag());
+    call_.PerformOps(&finish_ops_);
+  }
+
+  void Read(R* msg, std::function<void(bool)> f) {
+    auto* tag = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithSuccessTag)))::grpc::
+        internal::CallbackWithSuccessTag(call_.call(), f, &read_ops_);
+    read_ops_.RecvMessage(msg);
+    read_ops_.set_cq_tag(tag->tag());
+    call_.PerformOps(&read_ops_);
+  }
+
+ private:
+  friend class experimental::ClientCallbackReaderFactory<R>;
+  template <class W>
+  ClientCallbackReader(::grpc::internal::Call call, ClientContext* context,
+                       const W* request)
+      : context_(context), call_(call) {
+    GPR_CODEGEN_ASSERT(start_ops_.SendMessage(request).ok());
+    start_ops_.ClientSendClose();
+  }
+
+  ClientContext* context_;
+  ::grpc::internal::Call call_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpSendInitialMetadata,
+                              ::grpc::internal::CallOpSendMessage,
+                              ::grpc::internal::CallOpClientSendClose,
+                              ::grpc::internal::CallOpRecvInitialMetadata>
+      start_ops_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpRecvMessage<R>> read_ops_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpClientRecvStatus>
+      finish_ops_;
+};
+
+// Forward declaration
+template <class W>
+class ClientCallbackWriter;
+
+/// TODO(vjpai): Put this factory into ::grpc::internal when possible
+template <class W>
+class ClientCallbackWriterFactory {
+ public:
+  template <class R>
+  static ::grpc::experimental::ClientCallbackWriter<W>* Create(
+      ::grpc::ChannelInterface* channel,
+      const ::grpc::internal::RpcMethod& method, ClientContext* context,
+      R* response) {
+    ::grpc::internal::Call call =
+        channel->CreateCall(method, context, channel->CallbackCQ());
+    return new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call.call(), sizeof(::grpc::experimental::ClientCallbackWriter<W>)))::
+        grpc::experimental::ClientCallbackWriter<W>(call, context, response);
+  }
+};
+
+/// TODO(vjpai): make this a derived class of an interface class
+template <class W>
+class ClientCallbackWriter final {
+ public:
+  // always allocated against a call arena, no memory free required
+  static void operator delete(void* ptr, std::size_t size) {
+    assert(size == sizeof(ClientCallbackWriter));
+  }
+
+  void StartCall(std::function<void(Status)> on_completion) {
+    StartCall(std::move(on_completion), nullptr);
+  }
+
+  void StartCall(std::function<void(Status)> on_completion,
+                 std::function<void(bool)> on_metadata_available) {
+    // This call behaves differently based on whether or not we want
+    // a recv initial metadata callback.
+    // If not, then we just initiate 1 batch with send initial metadata
+    // and all receive operations, with the on_completion callback.
+    // If so, then we initiate a batch with send initial metadata, receive
+    // message and receive trailing metadata, based on the on_completion
+    // callback, plus a separate batch for receive initial metadata.
+
+    if (on_metadata_available) {
+      auto* tag1 = new (g_core_codegen_interface->grpc_call_arena_alloc(
+          call_.call(), sizeof(::grpc::internal::CallbackWithSuccessTag)))::
+          grpc::internal::CallbackWithSuccessTag(
+              call_.call(),
+              on_metadata_available ? on_metadata_available : [](bool) {},
+              &meta_ops_);
+      meta_ops_.RecvInitialMetadata(context_);
+      meta_ops_.set_cq_tag(tag1->tag());
+      call_.PerformOps(&meta_ops_);
+    }
+
+    auto* tag2 = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithStatusTag)))::grpc::
+        internal::CallbackWithStatusTag(call_.call(), on_completion,
+                                        &start_ops_);
+
+    if (!context_->initial_metadata_corked_) {
+      start_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                     context_->initial_metadata_flags());
+    }
+
+    if (!on_metadata_available) {
+      start_ops_.RecvInitialMetadata(context_);
+    }
+
+    start_ops_.ClientRecvStatus(context_, tag2->status_ptr());
+    start_ops_.set_cq_tag(tag2->tag());
+    call_.PerformOps(&start_ops_);
+  }
+
+  void Write(const W* msg, std::function<void(bool)> f) {
+    Write(msg, WriteOptions(), std::move(f));
+  }
+
+  void Write(const W* msg, WriteOptions options, std::function<void(bool)> f) {
+    auto* tag = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithSuccessTag)))::grpc::
+        internal::CallbackWithSuccessTag(call_.call(), f, &write_ops_);
+    if (context_->initial_metadata_corked_) {
+      write_ops_.SendInitialMetadata(context_->send_initial_metadata_,
+                                     context_->initial_metadata_flags());
+    }
+    // TODO(vjpai): don't assert
+    GPR_CODEGEN_ASSERT(write_ops_.SendMessage(*msg).ok());
+    if (options.is_last_message()) {
+      options.set_buffer_hint();
+      write_ops_.ClientSendClose();
+    }
+    write_ops_.set_cq_tag(tag->tag());
+    call_.PerformOps(&write_ops_);
+  }
+
+  void WritesDone(std::function<void(bool)> f) {
+    auto* tag = new (g_core_codegen_interface->grpc_call_arena_alloc(
+        call_.call(), sizeof(::grpc::internal::CallbackWithSuccessTag)))::grpc::
+        internal::CallbackWithSuccessTag(call_.call(), f, &write_ops_);
+    write_ops_.set_cq_tag(tag->tag());
+    write_ops_.ClientSendClose();
+    call_.PerformOps(&write_ops_);
+  }
+
+ private:
+  friend class experimental::ClientCallbackWriterFactory<W>;
+  template <class R>
+  ClientCallbackWriter(::grpc::internal::Call call, ClientContext* context,
+                       R* response)
+      : context_(context), call_(call) {
+    start_ops_.RecvMessage(response);
+    start_ops_.AllowNoMessage();
+  }
+
+  ClientContext* context_;
+  ::grpc::internal::Call call_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpSendInitialMetadata,
+                              ::grpc::internal::CallOpRecvInitialMetadata,
+                              ::grpc::internal::CallOpGenericRecvMessage,
+                              ::grpc::internal::CallOpClientRecvStatus>
+      start_ops_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpRecvInitialMetadata>
+      meta_ops_;
+  ::grpc::internal::CallOpSet<::grpc::internal::CallOpSendInitialMetadata,
+                              ::grpc::internal::CallOpSendMessage,
+                              ::grpc::internal::CallOpClientSendClose>
+      write_ops_;
+};
+
+// Forward declaration
 template <class W, class R>
 class ClientCallbackReaderWriter;
 
