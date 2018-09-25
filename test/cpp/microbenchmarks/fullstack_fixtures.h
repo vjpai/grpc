@@ -79,7 +79,11 @@ class FullstackFixture : public BaseFixture {
     if (address.length() > 0) {
       b.AddListeningPort(address, InsecureServerCredentials());
     }
-    cq_ = b.AddCompletionQueue(true);
+    if (service->has_async_methods()) {
+      cq_ = b.AddCompletionQueue(true);
+    } else {
+      cq_ = nullptr;
+    }
     b.RegisterService(service);
     config.ApplyCommonServerBuilderConfig(&b);
     server_ = b.BuildAndStart();
@@ -94,16 +98,19 @@ class FullstackFixture : public BaseFixture {
   }
 
   virtual ~FullstackFixture() {
-    // Dummy shutdown tag (this tag is swallowed by cq->Next() and is not
-    // returned to the user) see ShutdownTag definition for more details
-    ShutdownTag shutdown_tag;
-    grpc_server_shutdown_and_notify(server_->c_server(), cq_->cq(),
-                                    &shutdown_tag);
-    cq_->Shutdown();
-    void* tag;
-    bool ok;
-    while (cq_->Next(&tag, &ok)) {
-    }
+    if (cq_ == nullptr) {
+      server_->Shutdown();
+    } else {
+      // Dummy shutdown tag (this tag is swallowed by cq->Next() and is not
+      // returned to the user) see ShutdownTag definition for more details
+      ShutdownTag shutdown_tag;
+      grpc_server_shutdown_and_notify(server_->c_server(), cq_->cq(),
+                                      &shutdown_tag);
+      cq_->Shutdown();
+      void* tag;
+      bool ok;
+      while (cq_->Next(&tag, &ok)) {
+      }}
   }
 
   void AddToLabel(std::ostream& out, benchmark::State& state) {
