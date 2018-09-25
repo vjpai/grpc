@@ -4268,6 +4268,33 @@ targets:
   - linux
   - posix
   timeout_seconds: 1200
+- name: bm_fullstack_unary_sync_ping_pong
+  build: test
+  language: c++
+  headers:
+  - test/cpp/microbenchmarks/fullstack_unary_sync_ping_pong.h
+  src:
+  - test/cpp/microbenchmarks/bm_fullstack_unary_sync_ping_pong.cc
+  deps:
+  - grpc_benchmark
+  - benchmark
+  - grpc++_test_util_unsecure
+  - grpc_test_util_unsecure
+  - grpc++_unsecure
+  - grpc_unsecure
+  - gpr_test_util
+  - gpr
+  - grpc++_test_config
+  benchmark: true
+  defaults: benchmark
+  excluded_poll_engines:
+  - poll
+  - poll-cv
+  platforms:
+  - mac
+  - linux
+  - posix
+  timeout_seconds: 1200
 - name: bm_metadata
   build: test
   language: c++

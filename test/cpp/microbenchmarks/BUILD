@@ -150,6 +150,24 @@ grpc_cc_binary(
     deps = [":fullstack_unary_ping_pong_h"],
 )
 
+grpc_cc_library(
+    name = "fullstack_unary_sync_ping_pong_h",
+    testonly = 1,
+    hdrs = [
+        "fullstack_unary_sync_ping_pong.h",
+    ],
+    deps = [":helpers"],
+)
+
+grpc_cc_binary(
+    name = "bm_fullstack_unary_sync_ping_pong",
+    testonly = 1,
+    srcs = [
+        "bm_fullstack_unary_sync_ping_pong.cc",
+    ],
+    deps = [":fullstack_unary_sync_ping_pong_h"],
+)
+
 grpc_cc_binary(
     name = "bm_metadata",
     testonly = 1,

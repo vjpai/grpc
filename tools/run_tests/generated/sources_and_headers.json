@@ -3074,6 +3074,31 @@
       "grpc_test_util_unsecure", 
       "grpc_unsecure"
     ], 
+    "headers": [
+      "test/cpp/microbenchmarks/fullstack_unary_sync_ping_pong.h"
+    ], 
+    "is_filegroup": false, 
+    "language": "c++", 
+    "name": "bm_fullstack_unary_sync_ping_pong", 
+    "src": [
+      "test/cpp/microbenchmarks/bm_fullstack_unary_sync_ping_pong.cc", 
+      "test/cpp/microbenchmarks/fullstack_unary_sync_ping_pong.h"
+    ], 
+    "third_party": false, 
+    "type": "target"
+  }, 
+  {
+    "deps": [
+      "benchmark", 
+      "gpr", 
+      "gpr_test_util", 
+      "grpc++_test_config", 
+      "grpc++_test_util_unsecure", 
+      "grpc++_unsecure", 
+      "grpc_benchmark", 
+      "grpc_test_util_unsecure", 
+      "grpc_unsecure"
+    ], 
     "headers": [], 
     "is_filegroup": false, 
     "language": "c++", 
