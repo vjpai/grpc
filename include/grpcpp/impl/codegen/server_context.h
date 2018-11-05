@@ -66,8 +66,14 @@ template <class ServiceType, class RequestType, class ResponseType>
 class ServerStreamingHandler;
 template <class ServiceType, class RequestType, class ResponseType>
 class BidiStreamingHandler;
-template <class ServiceType, class RequestType, class ResponseType>
+template <class RequestType, class ResponseType>
 class CallbackUnaryHandler;
+template <class RequestType, class ResponseType>
+class CallbackClientStreamingHandler;
+template <class RequestType, class ResponseType>
+class CallbackServerStreamingHandler;
+template <class RequestType, class ResponseType>
+class CallbackBidiHandler;
 template <class Streamer, bool WriteNeeded>
 class TemplatedBidiStreamingHandler;
 template <StatusCode code>
@@ -270,8 +276,14 @@ class ServerContext {
   friend class ::grpc::internal::ServerStreamingHandler;
   template <class Streamer, bool WriteNeeded>
   friend class ::grpc::internal::TemplatedBidiStreamingHandler;
-  template <class ServiceType, class RequestType, class ResponseType>
+  template <class RequestType, class ResponseType>
   friend class ::grpc::internal::CallbackUnaryHandler;
+  template <class RequestType, class ResponseType>
+  friend class ::grpc::internal::CallbackClientStreamingHandler;
+  template <class RequestType, class ResponseType>
+  friend class ::grpc::internal::CallbackServerStreamingHandler;
+  template <class RequestType, class ResponseType>
+  friend class ::grpc::internal::CallbackBidiHandler;
   template <StatusCode code>
   friend class internal::ErrorMethodHandler;
   friend class ::grpc::ClientContext;
