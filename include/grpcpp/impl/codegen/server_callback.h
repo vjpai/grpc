@@ -100,9 +100,13 @@ class ServerCallbackWriter {
   virtual void Write(const Response* msg, WriteOptions options) = 0;
   virtual void WriteAndFinish(const Response* msg, WriteOptions options,
                               Status s) {
+    // Default implementation that can/should be overridden
     Write(msg, std::move(options));
     Finish(std::move(s));
   };
+  void WriteLast(const Response* msg, WriteOptions options) {
+    Write(msg, options.set_last_message());
+  }
 };
 
 template <class Request, class Response>
@@ -121,6 +125,9 @@ class ServerCallbackReaderWriter {
     Write(msg, std::move(options));
     Finish(std::move(s));
   };
+  void WriteLast(const Response* msg, WriteOptions options) {
+    Write(msg, options.set_last_message());
+  }
 };
 
 }  // namespace experimental

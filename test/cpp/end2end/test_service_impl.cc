@@ -71,6 +71,66 @@ void CheckServerAuthContext(
 }
 }  // namespace
 
+namespace {
+int GetIntValueFromMetadataHelper(
+    const char* key,
+    const std::multimap<grpc::string_ref, grpc::string_ref>& metadata,
+    int default_value) {
+  if (metadata.find(key) != metadata.end()) {
+    std::istringstream iss(ToString(metadata.find(key)->second));
+    iss >> default_value;
+    gpr_log(GPR_INFO, "%s : %d", key, default_value);
+  }
+
+  return default_value;
+}
+
+int GetIntValueFromMetadata(
+    const char* key,
+    const std::multimap<grpc::string_ref, grpc::string_ref>& metadata,
+    int default_value) {
+  return GetIntValueFromMetadataHelper(key, metadata, default_value);
+}
+
+void ServerTryCancel(ServerContext* context) {
+  EXPECT_FALSE(context->IsCancelled());
+  context->TryCancel();
+  gpr_log(GPR_INFO, "Server called TryCancel() to cancel the request");
+  // Now wait until it's really canceled
+  while (!context->IsCancelled()) {
+    gpr_sleep_until(gpr_time_add(gpr_now(GPR_CLOCK_REALTIME),
+                                 gpr_time_from_micros(1000, GPR_TIMESPAN)));
+  }
+}
+
+template <class F>
+void ContinueWhenCancelled(ServerContext* context, F&& next_step) {
+  if (context->IsCancelled()) {
+    next_step();
+  } else {
+    grpc::Alarm* alarm = new grpc::Alarm;
+    alarm->experimental().Set(
+        gpr_time_add(gpr_now(GPR_CLOCK_REALTIME),
+                     gpr_time_from_micros(1000, GPR_TIMESPAN)),
+        [context, next_step, alarm](bool) {
+          delete alarm;
+          ContinueWhenCancelled(context, next_step);
+        });
+  }
+}
+
+template <class F>
+void ServerTryCancel(ServerContext* context, F&& next_step) {
+  EXPECT_FALSE(context->IsCancelled());
+  context->TryCancel();
+  gpr_log(GPR_INFO, "Server called TryCancel() to cancel the request");
+  // Now wait until it's really canceled
+  // TODO(vjpai): Change check of this if we add an OnCancel to the reactor
+  ContinueWhenCancelled(context, std::move(next_step));
+}
+
+}  // namespace
+
 Status TestServiceImpl::Echo(ServerContext* context, const EchoRequest* request,
                              EchoResponse* response) {
   // A bit of sleep to make sure that short deadline tests fail
@@ -253,7 +313,7 @@ void CallbackTestServiceImpl::EchoNonDelayed(
     alarm_.experimental().Set(
         gpr_time_add(
             gpr_now(GPR_CLOCK_REALTIME),
-            gpr_time_from_micros(request->param().client_cancel_after_us(),
+            gpr_time_from_micros(request->param().server_cancel_after_us(),
                                  GPR_TIMESPAN)),
         [controller](bool) { controller->Finish(Status::CANCELLED); });
     return;
@@ -278,6 +338,7 @@ void CallbackTestServiceImpl::EchoNonDelayed(
           request->param().debug_info().SerializeAsString();
       context->AddTrailingMetadata(kDebugInfoTrailerKey, serialized_debug_info);
       controller->Finish(Status::CANCELLED);
+      return;
     }
   }
   if (request->has_param() &&
@@ -324,7 +385,7 @@ Status TestServiceImpl::RequestStream(ServerContext* context,
   std::thread* server_try_cancel_thd = nullptr;
   if (server_try_cancel == CANCEL_DURING_PROCESSING) {
     server_try_cancel_thd =
-        new std::thread(&TestServiceImpl::ServerTryCancel, this, context);
+        new std::thread([context] { ServerTryCancel(context); });
   }
 
   int num_msgs_read = 0;
@@ -379,7 +440,7 @@ Status TestServiceImpl::ResponseStream(ServerContext* context,
   std::thread* server_try_cancel_thd = nullptr;
   if (server_try_cancel == CANCEL_DURING_PROCESSING) {
     server_try_cancel_thd =
-        new std::thread(&TestServiceImpl::ServerTryCancel, this, context);
+        new std::thread([context] { ServerTryCancel(context); });
   }
 
   for (int i = 0; i < server_responses_to_send; i++) {
@@ -430,7 +491,7 @@ Status TestServiceImpl::BidiStream(
   std::thread* server_try_cancel_thd = nullptr;
   if (server_try_cancel == CANCEL_DURING_PROCESSING) {
     server_try_cancel_thd =
-        new std::thread(&TestServiceImpl::ServerTryCancel, this, context);
+        new std::thread([context] { ServerTryCancel(context); });
   }
 
   // kServerFinishAfterNReads suggests after how many reads, the server should
@@ -464,44 +525,243 @@ Status TestServiceImpl::BidiStream(
   return Status::OK;
 }
 
-namespace {
-int GetIntValueFromMetadataHelper(
-    const char* key,
-    const std::multimap<grpc::string_ref, grpc::string_ref>& metadata,
-    int default_value) {
-  if (metadata.find(key) != metadata.end()) {
-    std::istringstream iss(ToString(metadata.find(key)->second));
-    iss >> default_value;
-    gpr_log(GPR_INFO, "%s : %d", key, default_value);
-  }
+void CallbackTestServiceImpl::RequestStream(
+    ServerContext* context, EchoResponse* response,
+    experimental::ServerCallbackReader<EchoRequest>* reader) {
+  class Reactor : public ::grpc::experimental::ServerReadReactor {
+   public:
+    Reactor(ServerContext* context,
+            experimental::ServerCallbackReader<EchoRequest>* reader,
+            EchoResponse* response)
+        : ctx_(context), reader_(reader), response_(response) {
+      reader->BindReactor(this);
+      // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
+      // the server by calling ServerContext::TryCancel() depending on the
+      // value:
+      //   CANCEL_BEFORE_PROCESSING: The RPC is cancelled before the server
+      //   reads any message from the client CANCEL_DURING_PROCESSING: The RPC
+      //   is cancelled while the server is reading messages from the client
+      //   CANCEL_AFTER_PROCESSING: The RPC is cancelled after the server reads
+      //   all the messages from the client
+      server_try_cancel_ = GetIntValueFromMetadata(
+          kServerTryCancelRequest, context->client_metadata(), DO_NOT_CANCEL);
 
-  return default_value;
+      response_->set_message("");
+      reader_->Read(&request_);
+
+      if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
+        ServerTryCancel(ctx_, [this] {
+          reader_->Finish(Status::CANCELLED);
+          delete this;
+        });
+        return;
+      }
+
+      if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+        ctx_->TryCancel();
+        // Don't wait for it here
+      }
+    }
+    void OnReadDone(bool ok) override {
+      if (ok) {
+        response_->mutable_message()->append(request_.message());
+        num_msgs_read++;
+        reader_->Read(&request_);
+      } else {
+        gpr_log(GPR_INFO, "Read: %d messages", num_msgs_read);
+
+        if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+          ContinueWhenCancelled(ctx_, [this] {
+            reader_->Finish(Status::CANCELLED);
+            delete this;
+          });
+          return;
+        }
+        if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
+          ServerTryCancel(ctx_, [this] {
+            reader_->Finish(Status::CANCELLED);
+            delete this;
+          });
+          return;
+        }
+        reader_->Finish(Status::OK);
+        delete this;
+      }
+    }
+
+   private:
+    ServerContext* ctx_;
+    experimental::ServerCallbackReader<EchoRequest>* reader_;
+    EchoResponse* response_;
+    EchoRequest request_;
+    int num_msgs_read{0};
+    int server_try_cancel_;
+  };
+
+  new Reactor(context, reader, response);
 }
-};  // namespace
 
-int TestServiceImpl::GetIntValueFromMetadata(
-    const char* key,
-    const std::multimap<grpc::string_ref, grpc::string_ref>& metadata,
-    int default_value) {
-  return GetIntValueFromMetadataHelper(key, metadata, default_value);
+// Return 'kNumResponseStreamMsgs' messages.
+// TODO(yangg) make it generic by adding a parameter into EchoRequest
+void CallbackTestServiceImpl::ResponseStream(
+    ServerContext* context, const EchoRequest* request,
+    experimental::ServerCallbackWriter<EchoResponse>* writer) {
+  class Reactor : public ::grpc::experimental::ServerWriteReactor {
+   public:
+    Reactor(ServerContext* context,
+            experimental::ServerCallbackWriter<EchoResponse>* writer,
+            const EchoRequest* request)
+        : ctx_(context), writer_(writer), request_(request) {
+      writer_->BindReactor(this);
+      // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
+      // the server by calling ServerContext::TryCancel() depending on the
+      // value:
+      //   CANCEL_BEFORE_PROCESSING: The RPC is cancelled before the server
+      //   reads any message from the client CANCEL_DURING_PROCESSING: The RPC
+      //   is cancelled while the server is reading messages from the client
+      //   CANCEL_AFTER_PROCESSING: The RPC is cancelled after the server reads
+      //   all the messages from the client
+      server_try_cancel_ = GetIntValueFromMetadata(
+          kServerTryCancelRequest, context->client_metadata(), DO_NOT_CANCEL);
+      server_coalescing_api_ = GetIntValueFromMetadata(
+          kServerUseCoalescingApi, context->client_metadata(), 0);
+      server_responses_to_send_ = GetIntValueFromMetadata(
+          kServerResponseStreamsToSend, context->client_metadata(),
+          kServerDefaultResponseStreamsToSend);
+      if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
+        ServerTryCancel(ctx_, [this] {
+          writer_->Finish(Status::CANCELLED);
+          delete this;
+        });
+        return;
+      }
+
+      if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+        ctx_->TryCancel();
+      }
+      StartWrite();
+    }
+    void OnWriteDone(bool ok) {
+      if (num_msgs_sent_ < server_responses_to_send_) {
+        StartWrite();
+      } else if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+        ContinueWhenCancelled(ctx_, [this] {
+          writer_->Finish(Status::CANCELLED);
+          delete this;
+        });
+
+      } else if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
+        ServerTryCancel(ctx_, [this] {
+          writer_->Finish(Status::CANCELLED);
+          delete this;
+        });
+
+      } else {
+        writer_->Finish(Status::OK);
+        delete this;
+      }
+    }
+
+   private:
+    void StartWrite() {
+      response_.set_message(request_->message() +
+                            grpc::to_string(num_msgs_sent_));
+      if (num_msgs_sent_ == server_responses_to_send_ - 1 &&
+          server_coalescing_api_ != 0) {
+        writer_->WriteLast(&response_, WriteOptions());
+      } else {
+        writer_->Write(&response_);
+      }
+      num_msgs_sent_++;
+    }
+    ServerContext* ctx_;
+    experimental::ServerCallbackWriter<EchoResponse>* writer_;
+    const EchoRequest* request_;
+    EchoResponse response_;
+    int num_msgs_sent_{0};
+    int server_try_cancel_;
+    int server_coalescing_api_;
+    int server_responses_to_send_;
+  };
+  new Reactor(context, writer, request);
 }
 
-int CallbackTestServiceImpl::GetIntValueFromMetadata(
-    const char* key,
-    const std::multimap<grpc::string_ref, grpc::string_ref>& metadata,
-    int default_value) {
-  return GetIntValueFromMetadataHelper(key, metadata, default_value);
-}
+void CallbackTestServiceImpl::BidiStream(
+    ServerContext* context,
+    experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
+        stream) {
+  class Reactor : public ::grpc::experimental::ServerBidiReactor {
+   public:
+    Reactor(ServerContext* context,
+            experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
+                stream)
+        : ctx_(context), stream_(stream) {
+      stream_->BindReactor(this);
+      // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
+      // the server by calling ServerContext::TryCancel() depending on the
+      // value:
+      //   CANCEL_BEFORE_PROCESSING: The RPC is cancelled before the server
+      //   reads any message from the client CANCEL_DURING_PROCESSING: The RPC
+      //   is cancelled while the server is reading messages from the client
+      //   CANCEL_AFTER_PROCESSING: The RPC is cancelled after the server reads
+      //   all the messages from the client
+      server_try_cancel_ = GetIntValueFromMetadata(
+          kServerTryCancelRequest, context->client_metadata(), DO_NOT_CANCEL);
+      server_write_last_ = GetIntValueFromMetadata(
+          kServerFinishAfterNReads, context->client_metadata(), 0);
+      if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
+        ServerTryCancel(ctx_, [this] {
+          stream_->Finish(Status::CANCELLED);
+          delete this;
+        });
+        return;
+      }
 
-void TestServiceImpl::ServerTryCancel(ServerContext* context) {
-  EXPECT_FALSE(context->IsCancelled());
-  context->TryCancel();
-  gpr_log(GPR_INFO, "Server called TryCancel() to cancel the request");
-  // Now wait until it's really canceled
-  while (!context->IsCancelled()) {
-    gpr_sleep_until(gpr_time_add(gpr_now(GPR_CLOCK_REALTIME),
-                                 gpr_time_from_micros(1000, GPR_TIMESPAN)));
-  }
+      if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+        ctx_->TryCancel();
+      }
+
+      stream_->Read(&request_);
+    }
+    void OnReadDone(bool ok) {
+      if (ok) {
+        num_msgs_read_++;
+        gpr_log(GPR_INFO, "recv msg %s", request_.message().c_str());
+        response_.set_message(request_.message());
+        if (num_msgs_read_ == server_write_last_) {
+          stream_->WriteLast(&response_, WriteOptions());
+        } else {
+          stream_->Write(&response_);
+        }
+      } else if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
+        ContinueWhenCancelled(ctx_, [this] {
+          stream_->Finish(Status::CANCELLED);
+          delete this;
+        });
+      } else if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
+        ServerTryCancel(ctx_, [this] {
+          stream_->Finish(Status::CANCELLED);
+          delete this;
+        });
+      } else {
+        stream_->Finish(Status::OK);
+        delete this;
+      }
+    }
+    void OnWriteDone(bool ok) { stream_->Read(&request_); }
+
+   private:
+    ServerContext* ctx_;
+    experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
+        stream_;
+    EchoRequest request_;
+    EchoResponse response_;
+    int num_msgs_read_{0};
+    int server_try_cancel_;
+    int server_write_last_;
+  };
+
+  new Reactor(context, stream);
 }
 
 }  // namespace testing
