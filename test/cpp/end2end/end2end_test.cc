@@ -1458,11 +1458,20 @@ TEST_P(ProxyEnd2endTest, ClientCancelsRpc) {
   std::thread cancel_thread;
   if (!GetParam().callback_server) {
     cancel_thread = std::thread(
-        [&context, this] { CancelRpc(&context, kCancelDelayUs, &service_); });
+        [&context, this](int delay) { CancelRpc(&context, delay, &service_); },
+        kCancelDelayUs);
+    // Note: the unusual pattern above (and below) is caused by a conflict
+    // between two sets of compiler expectations. clang allows const to be
+    // captured without mention, so there is no need to capture kCancelDelayUs
+    // (and indeed clang-tidy complains if you do so). OTOH, a Windows compiler
+    // in our tests requires an explicit capture even for const. We square this
+    // circle by passing the const value in as an argument to the lambda.
   } else {
-    cancel_thread = std::thread([&context, this] {
-      CancelRpc(&context, kCancelDelayUs, &callback_service_);
-    });
+    cancel_thread = std::thread(
+        [&context, this](int delay) {
+          CancelRpc(&context, kCancelDelayUs, &callback_service_);
+        },
+        kCancelDelayUs);
   }
   Status s = stub_->Echo(&context, request, &response);
   cancel_thread.join();
