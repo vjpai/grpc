@@ -1469,7 +1469,7 @@ TEST_P(ProxyEnd2endTest, ClientCancelsRpc) {
   } else {
     cancel_thread = std::thread(
         [&context, this](int delay) {
-          CancelRpc(&context, kCancelDelayUs, &callback_service_);
+          CancelRpc(&context, delay, &callback_service_);
         },
         kCancelDelayUs);
   }
