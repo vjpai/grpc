@@ -291,7 +291,7 @@ class Server::SyncRequest final : public internal::CompletionQueueTag {
 
     void ContinueRunAfterInterception() {
       {
-        ctx_.BeginCompletionOp(&call_, nullptr);
+        ctx_.BeginCompletionOp(&call_, nullptr, nullptr);
         global_callbacks_->PreSynchronousRequest(&ctx_);
         auto* handler = resources_ ? method_->handler()
                                    : server_->resource_exhausted_handler_.get();
@@ -1017,7 +1017,7 @@ bool ServerInterface::BaseAsyncRequest::FinalizeResult(void** tag,
     }
   }
   if (*status && call_) {
-    context_->BeginCompletionOp(&call_wrapper_, nullptr);
+    context_->BeginCompletionOp(&call_wrapper_, nullptr, nullptr);
   }
   *tag = tag_;
   if (delete_on_finalize_) {
@@ -1028,7 +1028,7 @@ bool ServerInterface::BaseAsyncRequest::FinalizeResult(void** tag,
 
 void ServerInterface::BaseAsyncRequest::
     ContinueFinalizeResultAfterInterception() {
-  context_->BeginCompletionOp(&call_wrapper_, nullptr);
+  context_->BeginCompletionOp(&call_wrapper_, nullptr, nullptr);
   // Queue a tag which will be returned immediately
   grpc_core::ExecCtx exec_ctx;
   grpc_cq_begin_op(notification_cq_->cq(), this);

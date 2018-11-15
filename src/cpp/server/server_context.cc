@@ -17,6 +17,7 @@
  */
 
 #include <grpcpp/server_context.h>
+#include <grpcpp/support/server_callback.h>
 
 #include <algorithm>
 #include <mutex>
@@ -41,8 +42,9 @@ class ServerContext::CompletionOp final : public internal::CallOpSetInterface {
  public:
   // initial refs: one in the server context, one in the cq
   // must ref the call before calling constructor and after deleting this
-  CompletionOp(internal::Call* call)
+  CompletionOp(internal::Call* call, internal::ServerReactor* reactor)
       : call_(*call),
+        reactor_(reactor),
         has_tag_(false),
         tag_(nullptr),
         core_cq_tag_(this),
@@ -136,6 +138,7 @@ class ServerContext::CompletionOp final : public internal::CallOpSetInterface {
   }
 
   internal::Call call_;
+  internal::ServerReactor* reactor_;
   bool has_tag_;
   void* tag_;
   void* core_cq_tag_;
@@ -192,6 +195,9 @@ bool ServerContext::CompletionOp::FinalizeResult(void** tag, bool* status) {
 
   if (!*status) {
     cancelled_ = 1;
+    if (reactor_ != nullptr) {
+      reactor_->OnCancel();
+    }
   }
   /* Release the lock since we are going to be running through interceptors now
    */
@@ -270,7 +276,8 @@ void ServerContext::Clear() {
 }
 
 void ServerContext::BeginCompletionOp(internal::Call* call,
-                                      std::function<void(bool)> callback) {
+                                      std::function<void(bool)> callback,
+                                      internal::ServerReactor* reactor) {
   GPR_ASSERT(!completion_op_);
   if (rpc_info_) {
     rpc_info_->Ref();
@@ -278,7 +285,7 @@ void ServerContext::BeginCompletionOp(internal::Call* call,
   grpc_call_ref(call->call());
   completion_op_ =
       new (grpc_call_arena_alloc(call->call(), sizeof(CompletionOp)))
-          CompletionOp(call);
+          CompletionOp(call, reactor);
   if (callback != nullptr) {
     completion_tag_.Set(call->call(), std::move(callback), completion_op_);
     completion_op_->set_core_cq_tag(&completion_tag_);

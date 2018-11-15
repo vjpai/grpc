@@ -103,30 +103,10 @@ void ServerTryCancel(ServerContext* context) {
   }
 }
 
-template <class F>
-void ContinueWhenCancelled(ServerContext* context, F&& next_step) {
-  if (context->IsCancelled()) {
-    next_step();
-  } else {
-    grpc::Alarm* alarm = new grpc::Alarm;
-    alarm->experimental().Set(
-        gpr_time_add(gpr_now(GPR_CLOCK_REALTIME),
-                     gpr_time_from_micros(1000, GPR_TIMESPAN)),
-        [context, next_step, alarm](bool) {
-          delete alarm;
-          ContinueWhenCancelled(context, next_step);
-        });
-  }
-}
-
-template <class F>
-void ServerTryCancel(ServerContext* context, F&& next_step) {
+void ServerTryCancelNonblocking(ServerContext* context) {
   EXPECT_FALSE(context->IsCancelled());
   context->TryCancel();
   gpr_log(GPR_INFO, "Server called TryCancel() to cancel the request");
-  // Now wait until it's really canceled
-  // TODO(vjpai): Change check of this if we add an OnCancel to the reactor
-  ContinueWhenCancelled(context, std::forward<F>(next_step));
 }
 
 }  // namespace
@@ -526,7 +506,7 @@ Status TestServiceImpl::BidiStream(
   return Status::OK;
 }
 
-void CallbackTestServiceImpl::RequestStream(
+experimental::ServerReadReactor* CallbackTestServiceImpl::RequestStream(
     ServerContext* context, EchoResponse* response,
     experimental::ServerCallbackReader<EchoRequest>* reader) {
   class Reactor : public ::grpc::experimental::ServerReadReactor {
@@ -535,7 +515,6 @@ void CallbackTestServiceImpl::RequestStream(
             experimental::ServerCallbackReader<EchoRequest>* reader,
             EchoResponse* response)
         : ctx_(context), reader_(reader), response_(response) {
-      reader->BindReactor(this);
       // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
       // the server by calling ServerContext::TryCancel() depending on the
       // value:
@@ -550,10 +529,7 @@ void CallbackTestServiceImpl::RequestStream(
       response_->set_message("");
 
       if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
-        ServerTryCancel(ctx_, [this] {
-          reader_->Finish(Status::CANCELLED);
-          delete this;
-        });
+        ServerTryCancelNonblocking(ctx_);
         return;
       }
 
@@ -564,6 +540,8 @@ void CallbackTestServiceImpl::RequestStream(
 
       reader_->Read(&request_);
     }
+    void OnDone() override { delete this; }
+    void OnCancel() override { reader_->Finish(Status::CANCELLED); }
     void OnReadDone(bool ok) override {
       if (ok) {
         response_->mutable_message()->append(request_.message());
@@ -573,21 +551,14 @@ void CallbackTestServiceImpl::RequestStream(
         gpr_log(GPR_INFO, "Read: %d messages", num_msgs_read_);
 
         if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
-          ContinueWhenCancelled(ctx_, [this] {
-            reader_->Finish(Status::CANCELLED);
-            delete this;
-          });
+          // Let OnCancel recover this
           return;
         }
         if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
-          ServerTryCancel(ctx_, [this] {
-            reader_->Finish(Status::CANCELLED);
-            delete this;
-          });
+          ServerTryCancelNonblocking(ctx_);
           return;
         }
         reader_->Finish(Status::OK);
-        delete this;
       }
     }
 
@@ -600,12 +571,12 @@ void CallbackTestServiceImpl::RequestStream(
     int server_try_cancel_;
   };
 
-  new Reactor(context, reader, response);
+  return new Reactor(context, reader, response);
 }
 
 // Return 'kNumResponseStreamMsgs' messages.
 // TODO(yangg) make it generic by adding a parameter into EchoRequest
-void CallbackTestServiceImpl::ResponseStream(
+experimental::ServerWriteReactor* CallbackTestServiceImpl::ResponseStream(
     ServerContext* context, const EchoRequest* request,
     experimental::ServerCallbackWriter<EchoResponse>* writer) {
   class Reactor : public ::grpc::experimental::ServerWriteReactor {
@@ -614,7 +585,6 @@ void CallbackTestServiceImpl::ResponseStream(
             experimental::ServerCallbackWriter<EchoResponse>* writer,
             const EchoRequest* request)
         : ctx_(context), writer_(writer), request_(request) {
-      writer_->BindReactor(this);
       // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
       // the server by calling ServerContext::TryCancel() depending on the
       // value:
@@ -631,10 +601,7 @@ void CallbackTestServiceImpl::ResponseStream(
           kServerResponseStreamsToSend, context->client_metadata(),
           kServerDefaultResponseStreamsToSend);
       if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
-        ServerTryCancel(ctx_, [this] {
-          writer_->Finish(Status::CANCELLED);
-          delete this;
-        });
+        ServerTryCancelNonblocking(ctx_);
         return;
       }
 
@@ -645,24 +612,17 @@ void CallbackTestServiceImpl::ResponseStream(
         StartWrite();
       }
     }
-    void OnWriteDone(bool ok) {
+    void OnDone() override { delete this; }
+    void OnCancel() override { writer_->Finish(Status::CANCELLED); }
+    void OnWriteDone(bool ok) override {
       if (num_msgs_sent_ < server_responses_to_send_) {
         StartWrite();
       } else if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
-        ContinueWhenCancelled(ctx_, [this] {
-          writer_->Finish(Status::CANCELLED);
-          delete this;
-        });
-
+        // Let OnCancel recover this
       } else if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
-        ServerTryCancel(ctx_, [this] {
-          writer_->Finish(Status::CANCELLED);
-          delete this;
-        });
-
+        ServerTryCancelNonblocking(ctx_);
       } else {
         writer_->Finish(Status::OK);
-        delete this;
       }
     }
 
@@ -688,10 +648,10 @@ void CallbackTestServiceImpl::ResponseStream(
     int server_coalescing_api_;
     int server_responses_to_send_;
   };
-  new Reactor(context, writer, request);
+  return new Reactor(context, writer, request);
 }
 
-void CallbackTestServiceImpl::BidiStream(
+experimental::ServerBidiReactor* CallbackTestServiceImpl::BidiStream(
     ServerContext* context,
     experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
         stream) {
@@ -701,7 +661,6 @@ void CallbackTestServiceImpl::BidiStream(
             experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
                 stream)
         : ctx_(context), stream_(stream) {
-      stream_->BindReactor(this);
       // If 'server_try_cancel' is set in the metadata, the RPC is cancelled by
       // the server by calling ServerContext::TryCancel() depending on the
       // value:
@@ -715,10 +674,7 @@ void CallbackTestServiceImpl::BidiStream(
       server_write_last_ = GetIntValueFromMetadata(
           kServerFinishAfterNReads, context->client_metadata(), 0);
       if (server_try_cancel_ == CANCEL_BEFORE_PROCESSING) {
-        ServerTryCancel(ctx_, [this] {
-          stream_->Finish(Status::CANCELLED);
-          delete this;
-        });
+        ServerTryCancelNonblocking(ctx_);
         return;
       }
 
@@ -728,7 +684,9 @@ void CallbackTestServiceImpl::BidiStream(
 
       stream_->Read(&request_);
     }
-    void OnReadDone(bool ok) {
+    void OnDone() override { delete this; }
+    void OnCancel() override { stream_->Finish(Status::CANCELLED); }
+    void OnReadDone(bool ok) override {
       if (ok) {
         num_msgs_read_++;
         gpr_log(GPR_INFO, "recv msg %s", request_.message().c_str());
@@ -739,21 +697,14 @@ void CallbackTestServiceImpl::BidiStream(
           stream_->Write(&response_);
         }
       } else if (server_try_cancel_ == CANCEL_DURING_PROCESSING) {
-        ContinueWhenCancelled(ctx_, [this] {
-          stream_->Finish(Status::CANCELLED);
-          delete this;
-        });
+        // Let OnCancel handle this
       } else if (server_try_cancel_ == CANCEL_AFTER_PROCESSING) {
-        ServerTryCancel(ctx_, [this] {
-          stream_->Finish(Status::CANCELLED);
-          delete this;
-        });
+        ServerTryCancelNonblocking(ctx_);
       } else {
         stream_->Finish(Status::OK);
-        delete this;
       }
     }
-    void OnWriteDone(bool ok) { stream_->Read(&request_); }
+    void OnWriteDone(bool ok) override { stream_->Read(&request_); }
 
    private:
     ServerContext* ctx_;
@@ -766,7 +717,7 @@ void CallbackTestServiceImpl::BidiStream(
     int server_write_last_;
   };
 
-  new Reactor(context, stream);
+  return new Reactor(context, stream);
 }
 
 }  // namespace testing

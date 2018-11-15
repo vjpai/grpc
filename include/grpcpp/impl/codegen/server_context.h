@@ -79,6 +79,7 @@ class TemplatedBidiStreamingHandler;
 template <StatusCode code>
 class ErrorMethodHandler;
 class Call;
+class ServerReactor;
 }  // namespace internal
 
 class CompletionQueue;
@@ -295,7 +296,8 @@ class ServerContext {
   class CompletionOp;
 
   void BeginCompletionOp(internal::Call* call,
-                         std::function<void(bool)> callback);
+                         std::function<void(bool)> callback,
+                         internal::ServerReactor* reactor);
   /// Return the tag queued by BeginCompletionOp()
   internal::CompletionQueueTag* GetCompletionOpTag();
 

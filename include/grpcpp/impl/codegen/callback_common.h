@@ -47,6 +47,20 @@ void CatchingCallback(Func&& func, Args&&... args) {
 #endif  // GRPC_ALLOW_EXCEPTIONS
 }
 
+template <class ReturnType, class Func, class... Args>
+ReturnType* CatchingReactorCreator(Func&& func, Args&&... args) {
+#if GRPC_ALLOW_EXCEPTIONS
+  try {
+    return func(std::forward<Args>(args)...);
+  } catch (...) {
+    // fail the RPC, don't crash the library
+    return nullptr;
+  }
+#else   // GRPC_ALLOW_EXCEPTIONS
+  return func(std::forward<Args>(args)...);
+#endif  // GRPC_ALLOW_EXCEPTIONS
+}
+
 // The contract on these tags is that they are single-shot. They must be
 // constructed and then fired at exactly one point. There is no expectation
 // that they can be reused without reconstruction.

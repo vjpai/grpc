@@ -88,15 +88,15 @@ class CallbackTestServiceImpl
             EchoResponse* response,
             experimental::ServerCallbackRpcController* controller) override;
 
-  void RequestStream(
+  experimental::ServerReadReactor* RequestStream(
       ServerContext* context, EchoResponse* response,
       experimental::ServerCallbackReader<EchoRequest>* reader) override;
 
-  void ResponseStream(
+  experimental::ServerWriteReactor* ResponseStream(
       ServerContext* context, const EchoRequest* request,
       experimental::ServerCallbackWriter<EchoResponse>* writer) override;
 
-  void BidiStream(
+  experimental::ServerBidiReactor* BidiStream(
       ServerContext* context,
       experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
           stream) override;

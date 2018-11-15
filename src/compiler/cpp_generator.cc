@@ -867,12 +867,15 @@ void PrintHeaderServerCallbackMethodsHelper(
         "}\n");
     printer->Print(
         *vars,
-        "virtual void $Method$("
+        "virtual ::grpc::experimental::ServerReadReactor* $Method$("
         "::grpc::ServerContext* context, "
         "$RealResponse$* response, "
         "::grpc::experimental::ServerCallbackReader< $RealRequest$>* "
-        "reader) { reader->Finish(::grpc::Status("
-        "::grpc::StatusCode::UNIMPLEMENTED, \"\")); }\n");
+        "reader) {\n"
+        "  reader->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED,"
+        " \"\"));\n"
+        "  return new ::grpc::internal::UnimplementedReactor<\n"
+        "    ::grpc::experimental::ServerReadReactor>;}\n");
   } else if (ServerOnlyStreaming(method)) {
     printer->Print(
         *vars,
@@ -886,12 +889,15 @@ void PrintHeaderServerCallbackMethodsHelper(
         "}\n");
     printer->Print(
         *vars,
-        "virtual void $Method$("
+        "virtual ::grpc::experimental::ServerWriteReactor* $Method$("
         "::grpc::ServerContext* context, "
         "const $RealRequest$* request, "
         "::grpc::experimental::ServerCallbackWriter< $RealResponse$>* "
-        "writer) { writer->Finish(::grpc::Status("
-        "::grpc::StatusCode::UNIMPLEMENTED, \"\")); }\n");
+        "writer) {\n"
+        "  writer->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED,"
+        " \"\"));\n"
+        "  return new ::grpc::internal::UnimplementedReactor<\n"
+        "    ::grpc::experimental::ServerWriteReactor>;}\n");
   } else if (method->BidiStreaming()) {
     printer->Print(
         *vars,
@@ -903,13 +909,17 @@ void PrintHeaderServerCallbackMethodsHelper(
         "  abort();\n"
         "  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, \"\");\n"
         "}\n");
-    printer->Print(*vars,
-                   "virtual void $Method$("
-                   "::grpc::ServerContext* context, "
-                   "::grpc::experimental::ServerCallbackReaderWriter< "
-                   "$RealRequest$, $RealResponse$>* "
-                   "stream) { stream->Finish(::grpc::Status("
-                   "::grpc::StatusCode::UNIMPLEMENTED, \"\")); }\n");
+    printer->Print(
+        *vars,
+        "virtual ::grpc::experimental::ServerBidiReactor* $Method$("
+        "::grpc::ServerContext* context, "
+        "::grpc::experimental::ServerCallbackReaderWriter< "
+        "$RealRequest$, $RealResponse$>* "
+        "stream) {\n"
+        "  stream->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED,"
+        " \"\"));\n"
+        "  return new ::grpc::internal::UnimplementedReactor<\n"
+        "    ::grpc::experimental::ServerBidiReactor>;}\n");
   }
 }
 
@@ -944,7 +954,7 @@ void PrintHeaderServerMethodCallback(
         "             $RealResponse$* response,\n"
         "             ::grpc::experimental::ServerCallbackRpcController* "
         "controller) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, request, response, controller);\n"
         "             }));\n");
   } else if (ClientOnlyStreaming(method)) {
@@ -958,7 +968,7 @@ void PrintHeaderServerMethodCallback(
         "             ::grpc::experimental::ServerCallbackReader< "
         "$RealRequest$>* "
         "reader) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, response, reader);\n"
         "             }));\n");
   } else if (ServerOnlyStreaming(method)) {
@@ -972,7 +982,7 @@ void PrintHeaderServerMethodCallback(
         "             ::grpc::experimental::ServerCallbackWriter< "
         "$RealResponse$>* "
         "writer) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, request, writer);\n"
         "             }));\n");
   } else if (method->BidiStreaming()) {
@@ -985,7 +995,7 @@ void PrintHeaderServerMethodCallback(
         "             ::grpc::experimental::ServerCallbackReaderWriter< "
         "$RealRequest$, $RealResponse$>* "
         "stream) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, stream);\n"
         "             }));\n");
   }
@@ -1044,7 +1054,7 @@ void PrintHeaderServerMethodRawCallback(
         "             ::grpc::experimental::ServerCallbackReader< "
         "$RealRequest$>* "
         "reader) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, response, reader);\n"
         "             }));\n");
   } else if (ServerOnlyStreaming(method)) {
@@ -1058,7 +1068,7 @@ void PrintHeaderServerMethodRawCallback(
         "             ::grpc::experimental::ServerCallbackWriter< "
         "$RealResponse$>* "
         "writer) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, request, writer);\n"
         "             }));\n");
   } else if (method->BidiStreaming()) {
@@ -1071,7 +1081,7 @@ void PrintHeaderServerMethodRawCallback(
         "             ::grpc::experimental::ServerCallbackReaderWriter< "
         "$RealRequest$, $RealResponse$>* "
         "stream) {\n"
-        "               this->$"
+        "               return this->$"
         "Method$(context, stream);\n"
         "             }));\n");
   }
