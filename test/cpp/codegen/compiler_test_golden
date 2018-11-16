@@ -320,7 +320,7 @@ class ServiceA final {
                  const ::grpc::testing::Request* request,
                  ::grpc::testing::Response* response,
                  ::grpc::experimental::ServerCallbackRpcController* controller) {
-                   this->MethodA1(context, request, response, controller);
+                   return this->MethodA1(context, request, response, controller);
                  }));
     }
     ~ExperimentalWithCallbackMethod_MethodA1() override {
@@ -344,7 +344,7 @@ class ServiceA final {
           [this](::grpc::ServerContext* context,
                  ::grpc::testing::Response* response,
                  ::grpc::experimental::ServerCallbackReader< ::grpc::testing::Request>* reader) {
-                   this->MethodA2(context, response, reader);
+                   return this->MethodA2(context, response, reader);
                  }));
     }
     ~ExperimentalWithCallbackMethod_MethodA2() override {
@@ -355,7 +355,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA2(::grpc::ServerContext* context, ::grpc::testing::Response* response, ::grpc::experimental::ServerCallbackReader< ::grpc::testing::Request>* reader) { reader->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerReadReactor* MethodA2(::grpc::ServerContext* context, ::grpc::testing::Response* response, ::grpc::experimental::ServerCallbackReader< ::grpc::testing::Request>* reader) {
+      reader->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerReadReactor>;}
   };
   template <class BaseClass>
   class ExperimentalWithCallbackMethod_MethodA3 : public BaseClass {
@@ -368,7 +371,7 @@ class ServiceA final {
           [this](::grpc::ServerContext* context,
                  const ::grpc::testing::Request* request,
                  ::grpc::experimental::ServerCallbackWriter< ::grpc::testing::Response>* writer) {
-                   this->MethodA3(context, request, writer);
+                   return this->MethodA3(context, request, writer);
                  }));
     }
     ~ExperimentalWithCallbackMethod_MethodA3() override {
@@ -379,7 +382,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA3(::grpc::ServerContext* context, const ::grpc::testing::Request* request, ::grpc::experimental::ServerCallbackWriter< ::grpc::testing::Response>* writer) { writer->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerWriteReactor* MethodA3(::grpc::ServerContext* context, const ::grpc::testing::Request* request, ::grpc::experimental::ServerCallbackWriter< ::grpc::testing::Response>* writer) {
+      writer->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerWriteReactor>;}
   };
   template <class BaseClass>
   class ExperimentalWithCallbackMethod_MethodA4 : public BaseClass {
@@ -391,7 +397,7 @@ class ServiceA final {
         new ::grpc::internal::CallbackBidiHandler< ::grpc::testing::Request, ::grpc::testing::Response>(
           [this](::grpc::ServerContext* context,
                  ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::testing::Request, ::grpc::testing::Response>* stream) {
-                   this->MethodA4(context, stream);
+                   return this->MethodA4(context, stream);
                  }));
     }
     ~ExperimentalWithCallbackMethod_MethodA4() override {
@@ -402,7 +408,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA4(::grpc::ServerContext* context, ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::testing::Request, ::grpc::testing::Response>* stream) { stream->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerBidiReactor* MethodA4(::grpc::ServerContext* context, ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::testing::Request, ::grpc::testing::Response>* stream) {
+      stream->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerBidiReactor>;}
   };
   typedef ExperimentalWithCallbackMethod_MethodA1<ExperimentalWithCallbackMethod_MethodA2<ExperimentalWithCallbackMethod_MethodA3<ExperimentalWithCallbackMethod_MethodA4<Service > > > > ExperimentalCallbackService;
   template <class BaseClass>
@@ -589,7 +598,7 @@ class ServiceA final {
           [this](::grpc::ServerContext* context,
                  ::grpc::ByteBuffer* response,
                  ::grpc::experimental::ServerCallbackReader< ::grpc::ByteBuffer>* reader) {
-                   this->MethodA2(context, response, reader);
+                   return this->MethodA2(context, response, reader);
                  }));
     }
     ~ExperimentalWithRawCallbackMethod_MethodA2() override {
@@ -600,7 +609,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA2(::grpc::ServerContext* context, ::grpc::ByteBuffer* response, ::grpc::experimental::ServerCallbackReader< ::grpc::ByteBuffer>* reader) { reader->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerReadReactor* MethodA2(::grpc::ServerContext* context, ::grpc::ByteBuffer* response, ::grpc::experimental::ServerCallbackReader< ::grpc::ByteBuffer>* reader) {
+      reader->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerReadReactor>;}
   };
   template <class BaseClass>
   class ExperimentalWithRawCallbackMethod_MethodA3 : public BaseClass {
@@ -613,7 +625,7 @@ class ServiceA final {
           [this](::grpc::ServerContext* context,
                  const ::grpc::ByteBuffer* request,
                  ::grpc::experimental::ServerCallbackWriter< ::grpc::ByteBuffer>* writer) {
-                   this->MethodA3(context, request, writer);
+                   return this->MethodA3(context, request, writer);
                  }));
     }
     ~ExperimentalWithRawCallbackMethod_MethodA3() override {
@@ -624,7 +636,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA3(::grpc::ServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::experimental::ServerCallbackWriter< ::grpc::ByteBuffer>* writer) { writer->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerWriteReactor* MethodA3(::grpc::ServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::experimental::ServerCallbackWriter< ::grpc::ByteBuffer>* writer) {
+      writer->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerWriteReactor>;}
   };
   template <class BaseClass>
   class ExperimentalWithRawCallbackMethod_MethodA4 : public BaseClass {
@@ -636,7 +651,7 @@ class ServiceA final {
         new ::grpc::internal::CallbackBidiHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
           [this](::grpc::ServerContext* context,
                  ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* stream) {
-                   this->MethodA4(context, stream);
+                   return this->MethodA4(context, stream);
                  }));
     }
     ~ExperimentalWithRawCallbackMethod_MethodA4() override {
@@ -647,7 +662,10 @@ class ServiceA final {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
-    virtual void MethodA4(::grpc::ServerContext* context, ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* stream) { stream->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "")); }
+    virtual ::grpc::experimental::ServerBidiReactor* MethodA4(::grpc::ServerContext* context, ::grpc::experimental::ServerCallbackReaderWriter< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* stream) {
+      stream->Finish(::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, ""));
+      return new ::grpc::internal::UnimplementedReactor<
+        ::grpc::experimental::ServerBidiReactor>;}
   };
   template <class BaseClass>
   class WithStreamedUnaryMethod_MethodA1 : public BaseClass {
@@ -796,7 +814,7 @@ class ServiceB final {
                  const ::grpc::testing::Request* request,
                  ::grpc::testing::Response* response,
                  ::grpc::experimental::ServerCallbackRpcController* controller) {
-                   this->MethodB1(context, request, response, controller);
+                   return this->MethodB1(context, request, response, controller);
                  }));
     }
     ~ExperimentalWithCallbackMethod_MethodB1() override {
