@@ -88,18 +88,14 @@ class CallbackTestServiceImpl
             EchoResponse* response,
             experimental::ServerCallbackRpcController* controller) override;
 
-  experimental::ServerReadReactor* RequestStream(
-      ServerContext* context, EchoResponse* response,
-      experimental::ServerCallbackReader<EchoRequest>* reader) override;
+  experimental::ServerReadReactor<EchoRequest, EchoResponse>* RequestStream()
+      override;
 
-  experimental::ServerWriteReactor* ResponseStream(
-      ServerContext* context, const EchoRequest* request,
-      experimental::ServerCallbackWriter<EchoResponse>* writer) override;
+  experimental::ServerWriteReactor<EchoRequest, EchoResponse>* ResponseStream()
+      override;
 
-  experimental::ServerBidiReactor* BidiStream(
-      ServerContext* context,
-      experimental::ServerCallbackReaderWriter<EchoRequest, EchoResponse>*
-          stream) override;
+  experimental::ServerBidiReactor<EchoRequest, EchoResponse>* BidiStream()
+      override;
 
   // Unimplemented is left unimplemented to test the returned error.
   bool signal_client() {

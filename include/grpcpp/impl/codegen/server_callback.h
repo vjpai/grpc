@@ -48,6 +48,14 @@ class ServerReactor {
 
 namespace experimental {
 
+// Forward declarations
+template <class Request, class Response>
+class ServerReadReactor;
+template <class Request, class Response>
+class ServerWriteReactor;
+template <class Request, class Response>
+class ServerBidiReactor;
+
 // For unary RPCs, the exposed controller class is only an interface
 // and the actual implementation is an internal class.
 class ServerCallbackRpcController {
@@ -63,28 +71,9 @@ class ServerCallbackRpcController {
   virtual void SendInitialMetadata(std::function<void(bool)>) = 0;
 };
 
-class ServerBidiReactor : public internal::ServerReactor {
- public:
-  ~ServerBidiReactor() = default;
-  virtual void OnSendInitialMetadataDone(bool ok) {}
-  virtual void OnReadDone(bool ok) {}
-  virtual void OnWriteDone(bool ok) {}
-};
-
-class ServerReadReactor : public internal::ServerReactor {
- public:
-  ~ServerReadReactor() = default;
-  virtual void OnSendInitialMetadataDone(bool ok) {}
-  virtual void OnReadDone(bool ok) {}
-};
-
-class ServerWriteReactor : public internal::ServerReactor {
- public:
-  ~ServerWriteReactor() = default;
-  virtual void OnSendInitialMetadataDone(bool ok) {}
-  virtual void OnWriteDone(bool ok) {}
-};
-
+// NOTE: The actual streaming object classes are provided
+// as API only to support mocking. There are no implementations of
+// these class interfaces in the API.
 template <class Request>
 class ServerCallbackReader {
  public:
@@ -92,6 +81,12 @@ class ServerCallbackReader {
   virtual void Finish(Status s) = 0;
   virtual void SendInitialMetadata() = 0;
   virtual void Read(Request* msg) = 0;
+
+ protected:
+  template <class Response>
+  void BindReactor(ServerReadReactor<Request, Response>* reactor) {
+    reactor->BindReader(this);
+  }
 };
 
 template <class Response>
@@ -101,7 +96,6 @@ class ServerCallbackWriter {
 
   virtual void Finish(Status s) = 0;
   virtual void SendInitialMetadata() = 0;
-  void Write(const Response* msg) { Write(msg, WriteOptions()); }
   virtual void Write(const Response* msg, WriteOptions options) = 0;
   virtual void WriteAndFinish(const Response* msg, WriteOptions options,
                               Status s) {
@@ -109,8 +103,11 @@ class ServerCallbackWriter {
     Write(msg, std::move(options));
     Finish(std::move(s));
   };
-  void WriteLast(const Response* msg, WriteOptions options) {
-    Write(msg, options.set_last_message());
+
+ protected:
+  template <class Request>
+  void BindReactor(ServerWriteReactor<Request, Response>* reactor) {
+    reactor->BindWriter(this);
   }
 };
 
@@ -122,26 +119,136 @@ class ServerCallbackReaderWriter {
   virtual void Finish(Status s) = 0;
   virtual void SendInitialMetadata() = 0;
   virtual void Read(Request* msg) = 0;
-  void Write(const Response* msg) { Write(msg, WriteOptions()); }
   virtual void Write(const Response* msg, WriteOptions options) = 0;
   virtual void WriteAndFinish(const Response* msg, WriteOptions options,
                               Status s) {
+    // Default implementation that can/should be overridden
     Write(msg, std::move(options));
     Finish(std::move(s));
   };
-  void WriteLast(const Response* msg, WriteOptions options) {
-    Write(msg, options.set_last_message());
+
+ protected:
+  void BindReactor(ServerBidiReactor<Request, Response>* reactor) {
+    reactor->BindStream(this);
   }
+};
+
+// The following classes are reactors that are to be implemented
+// by the user, returned as the result of the method handler for
+// a callback method, and activated by the call to OnStarted
+template <class Request, class Response>
+class ServerBidiReactor : public internal::ServerReactor {
+ public:
+  ~ServerBidiReactor() = default;
+  virtual void OnStarted(ServerContext*) {}
+  virtual void OnSendInitialMetadataDone(bool ok) {}
+  virtual void OnReadDone(bool ok) {}
+  virtual void OnWriteDone(bool ok) {}
+
+  void StartSendInitialMetadata() { stream_->SendInitialMetadata(); }
+  void StartRead(Request* msg) { stream_->Read(msg); }
+  void StartWrite(const Response* msg) { StartWrite(msg, WriteOptions()); }
+  void StartWrite(const Response* msg, WriteOptions options) {
+    stream_->Write(msg, std::move(options));
+  }
+  void StartWriteAndFinish(const Response* msg, WriteOptions options,
+                           Status s) {
+    stream_->WriteAndFinish(msg, std::move(options), std::move(s));
+  }
+  void StartWriteLast(const Response* msg, WriteOptions options) {
+    StartWrite(msg, std::move(options.set_last_message()));
+  }
+  void Finish(Status s) { stream_->Finish(std::move(s)); }
+
+ private:
+  friend class ServerCallbackReaderWriter<Request, Response>;
+  void BindStream(ServerCallbackReaderWriter<Request, Response>* stream) {
+    stream_ = stream;
+  }
+
+  ServerCallbackReaderWriter<Request, Response>* stream_;
+};
+
+template <class Request, class Response>
+class ServerReadReactor : public internal::ServerReactor {
+ public:
+  ~ServerReadReactor() = default;
+  virtual void OnStarted(ServerContext*, Response* resp) {}
+  virtual void OnSendInitialMetadataDone(bool ok) {}
+  virtual void OnReadDone(bool ok) {}
+
+  void StartSendInitialMetadata() { reader_->SendInitialMetadata(); }
+  void StartRead(Request* msg) { reader_->Read(msg); }
+  void Finish(Status s) { reader_->Finish(std::move(s)); }
+
+ private:
+  friend class ServerCallbackReader<Request>;
+  void BindReader(ServerCallbackReader<Request>* reader) { reader_ = reader; }
+
+  ServerCallbackReader<Request>* reader_;
+};
+
+template <class Request, class Response>
+class ServerWriteReactor : public internal::ServerReactor {
+ public:
+  ~ServerWriteReactor() = default;
+  virtual void OnStarted(ServerContext*, const Request* req) {}
+  virtual void OnSendInitialMetadataDone(bool ok) {}
+  virtual void OnWriteDone(bool ok) {}
+
+  void StartSendInitialMetadata() { writer_->SendInitialMetadata(); }
+  void StartWrite(const Response* msg) { StartWrite(msg, WriteOptions()); }
+  void StartWrite(const Response* msg, WriteOptions options) {
+    writer_->Write(msg, std::move(options));
+  }
+  void StartWriteAndFinish(const Response* msg, WriteOptions options,
+                           Status s) {
+    writer_->WriteAndFinish(msg, std::move(options), std::move(s));
+  }
+  void StartWriteLast(const Response* msg, WriteOptions options) {
+    StartWrite(msg, std::move(options.set_last_message()));
+  }
+  void Finish(Status s) { writer_->Finish(std::move(s)); }
+
+ private:
+  friend class ServerCallbackWriter<Response>;
+  void BindWriter(ServerCallbackWriter<Response>* writer) { writer_ = writer; }
+
+  ServerCallbackWriter<Response>* writer_;
 };
 
 }  // namespace experimental
 
 namespace internal {
 
-template <class BaseReactor>
-class UnimplementedReactor : public BaseReactor {
+template <class Request, class Response>
+class UnimplementedReadReactor
+    : public experimental::ServerReadReactor<Request, Response> {
  public:
   void OnDone() override { delete this; }
+  void OnStarted(ServerContext*, Response*) override {
+    this->Finish(Status(StatusCode::UNIMPLEMENTED, ""));
+  }
+};
+
+template <class Request, class Response>
+class UnimplementedWriteReactor
+    : public experimental::ServerWriteReactor<Request, Response> {
+ public:
+  void OnDone() override { delete this; }
+  void OnStarted(ServerContext*, const Request*) override {
+    this->Finish(Status(StatusCode::UNIMPLEMENTED, ""));
+  }
+};
+
+template <class Request, class Response>
+class UnimplementedBidiReactor
+    : public experimental::ServerBidiReactor<Request, Response> {
+ public:
+  void OnDone() override { delete this; }
+  void OnStarted(ServerContext*) override {
+    this->Finish(Status(StatusCode::UNIMPLEMENTED, ""));
+  }
 };
 
 template <class RequestType, class ResponseType>
@@ -200,8 +307,8 @@ class CallbackUnaryHandler : public MethodHandler {
       : public experimental::ServerCallbackRpcController {
    public:
     void Finish(Status s) override {
-      finish_tag_.Set(call_.call(), [this](bool) { MaybeDone(); },
-                      &finish_ops_);
+      finish_tag_.Set(
+          call_.call(), [this](bool) { MaybeDone(); }, &finish_ops_);
       if (!ctx_->sent_initial_metadata_) {
         finish_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                         ctx_->initial_metadata_flags());
@@ -226,12 +333,13 @@ class CallbackUnaryHandler : public MethodHandler {
       callbacks_outstanding_++;
       // TODO(vjpai): Consider taking f as a move-capture if we adopt C++14
       //              and if performance of this operation matters
-      meta_tag_.Set(call_.call(),
-                    [this, f](bool ok) {
-                      f(ok);
-                      MaybeDone();
-                    },
-                    &meta_ops_);
+      meta_tag_.Set(
+          call_.call(),
+          [this, f](bool ok) {
+            f(ok);
+            MaybeDone();
+          },
+          &meta_ops_);
       meta_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                     ctx_->initial_metadata_flags());
       if (ctx_->compression_level_set()) {
@@ -252,7 +360,8 @@ class CallbackUnaryHandler : public MethodHandler {
           call_(*call),
           req_(req),
           call_requester_(std::move(call_requester)) {
-      ctx_->BeginCompletionOp(call, [this](bool) { MaybeDone(); }, nullptr);
+      ctx_->BeginCompletionOp(
+          call, [this](bool) { MaybeDone(); }, nullptr);
     }
 
     ~ServerCallbackRpcControllerImpl() { req_->~RequestType(); }
@@ -291,9 +400,8 @@ template <class RequestType, class ResponseType>
 class CallbackClientStreamingHandler : public MethodHandler {
  public:
   CallbackClientStreamingHandler(
-      std::function<experimental::ServerReadReactor*(
-          ServerContext*, ResponseType*,
-          experimental::ServerCallbackReader<RequestType>*)>
+      std::function<
+          experimental::ServerReadReactor<RequestType, ResponseType>*()>
           func)
       : func_(std::move(func)) {}
   void RunHandler(const HandlerParameter& param) final {
@@ -308,33 +416,31 @@ class CallbackClientStreamingHandler : public MethodHandler {
 
     if (!fail) {
       // Call the actual function handler and expect the user to call finish
-      reader->reactor_ =
-          CatchingReactorCreator<experimental::ServerReadReactor>(
-              func_, param.server_context, reader->response(), reader);
+      reader->reactor_ = CatchingReactorCreator<
+          experimental::ServerReadReactor<RequestType, ResponseType>>(func_);
       fail = (reader->reactor_ == nullptr);
     }
 
     if (fail) {
       // if deserialization or handler failed, we need to fail the call
-      reader->Finish(status);
       reader->reactor_ =
-          new UnimplementedReactor<experimental::ServerReadReactor>;
+          new UnimplementedReadReactor<RequestType, ResponseType>;
     }
-    reader->StartOperations();
+
+    reader->BindReactor(reader->reactor_);
+    reader->reactor_->OnStarted(param.server_context, reader->response());
   }
 
  private:
-  std::function<experimental::ServerReadReactor*(
-      ServerContext*, ResponseType*,
-      experimental::ServerCallbackReader<RequestType>*)>
+  std::function<experimental::ServerReadReactor<RequestType, ResponseType>*()>
       func_;
 
   class ServerCallbackReaderImpl
       : public experimental::ServerCallbackReader<RequestType> {
    public:
     void Finish(Status s) override {
-      finish_tag_.Set(call_.call(), [this](bool) { MaybeDone(); },
-                      &finish_ops_);
+      finish_tag_.Set(
+          call_.call(), [this](bool) { MaybeDone(); }, &finish_ops_);
       if (!ctx_->sent_initial_metadata_) {
         finish_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                         ctx_->initial_metadata_flags());
@@ -351,24 +457,21 @@ class CallbackClientStreamingHandler : public MethodHandler {
         finish_ops_.ServerSendStatus(&ctx_->trailing_metadata_, s);
       }
       finish_ops_.set_core_cq_tag(&finish_tag_);
-      if (started_) {
-        call_.PerformOps(&finish_ops_);
-      } else {
-        finish_ops_at_start_ = true;
-      }
+      call_.PerformOps(&finish_ops_);
     }
 
     void SendInitialMetadata() override {
       GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
       callbacks_outstanding_++;
-      meta_tag_.Set(call_.call(),
-                    [this](bool ok) {
-                      if (reactor_ != nullptr) {
-                        reactor_->OnSendInitialMetadataDone(ok);
-                      }
-                      MaybeDone();
-                    },
-                    &meta_ops_);
+      meta_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnSendInitialMetadataDone(ok);
+            }
+            MaybeDone();
+          },
+          &meta_ops_);
       meta_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                     ctx_->initial_metadata_flags());
       if (ctx_->compression_level_set()) {
@@ -376,21 +479,13 @@ class CallbackClientStreamingHandler : public MethodHandler {
       }
       ctx_->sent_initial_metadata_ = true;
       meta_ops_.set_core_cq_tag(&meta_tag_);
-      if (started_) {
-        call_.PerformOps(&meta_ops_);
-      } else {
-        meta_ops_at_start_ = true;
-      }
+      call_.PerformOps(&meta_ops_);
     }
 
     void Read(RequestType* req) override {
       callbacks_outstanding_++;
       read_ops_.RecvMessage(req);
-      if (started_) {
-        call_.PerformOps(&read_ops_);
-      } else {
-        read_ops_at_start_ = true;
-      }
+      call_.PerformOps(&read_ops_);
     }
 
    private:
@@ -399,34 +494,21 @@ class CallbackClientStreamingHandler : public MethodHandler {
     ServerCallbackReaderImpl(ServerContext* ctx, Call* call,
                              std::function<void()> call_requester)
         : ctx_(ctx), call_(*call), call_requester_(std::move(call_requester)) {
-      read_tag_.Set(call_.call(),
-                    [this](bool ok) {
-                      if (reactor_ != nullptr) {
-                        reactor_->OnReadDone(ok);
-                      }
-                      MaybeDone();
-                    },
-                    &read_ops_);
+      read_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnReadDone(ok);
+            }
+            MaybeDone();
+          },
+          &read_ops_);
       read_ops_.set_core_cq_tag(&read_tag_);
     }
 
     ~ServerCallbackReaderImpl() {}
 
     ResponseType* response() { return &resp_; }
-
-    void StartOperations() {
-      started_ = true;
-      if (read_ops_at_start_) {
-        call_.PerformOps(&read_ops_);
-      }
-      ctx_->BeginCompletionOp(&call_, [this](bool) { MaybeDone(); }, reactor_);
-      if (meta_ops_at_start_) {
-        call_.PerformOps(&meta_ops_);
-      }
-      if (finish_ops_at_start_) {
-        call_.PerformOps(&finish_ops_);
-      }
-    }
 
     void MaybeDone() {
       if (--callbacks_outstanding_ == 0) {
@@ -441,22 +523,18 @@ class CallbackClientStreamingHandler : public MethodHandler {
 
     CallOpSet<CallOpSendInitialMetadata> meta_ops_;
     CallbackWithSuccessTag meta_tag_;
-    bool meta_ops_at_start_{false};
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
               CallOpServerSendStatus>
         finish_ops_;
-    bool finish_ops_at_start_{false};
     CallbackWithSuccessTag finish_tag_;
     CallOpSet<CallOpRecvMessage<RequestType>> read_ops_;
     CallbackWithSuccessTag read_tag_;
-    bool read_ops_at_start_{false};
 
     ServerContext* ctx_;
     Call call_;
     ResponseType resp_;
     std::function<void()> call_requester_;
-    experimental::ServerReadReactor* reactor_;
-    bool started_{false};
+    experimental::ServerReadReactor<RequestType, ResponseType>* reactor_;
     std::atomic_int callbacks_outstanding_{
         2};  // reserve for Finish and CompletionOp
   };
@@ -466,9 +544,8 @@ template <class RequestType, class ResponseType>
 class CallbackServerStreamingHandler : public MethodHandler {
  public:
   CallbackServerStreamingHandler(
-      std::function<experimental::ServerWriteReactor*(
-          ServerContext*, const RequestType*,
-          experimental::ServerCallbackWriter<ResponseType>*)>
+      std::function<
+          experimental::ServerWriteReactor<RequestType, ResponseType>*()>
           func)
       : func_(std::move(func)) {}
   void RunHandler(const HandlerParameter& param) final {
@@ -484,19 +561,19 @@ class CallbackServerStreamingHandler : public MethodHandler {
 
     if (!fail) {
       // Call the actual function handler and expect the user to call finish
-      writer->reactor_ =
-          CatchingReactorCreator<experimental::ServerWriteReactor>(
-              func_, param.server_context, writer->request(), writer);
+      writer->reactor_ = CatchingReactorCreator<
+          experimental::ServerWriteReactor<RequestType, ResponseType>>(func_);
       fail = (writer->reactor_ == nullptr);
     }
 
     if (fail) {
       // if deserialization or handler failed, we need to fail the call
-      writer->Finish(status);
       writer->reactor_ =
-          new UnimplementedReactor<experimental::ServerWriteReactor>;
+          new UnimplementedWriteReactor<RequestType, ResponseType>;
     }
-    writer->StartOperations();
+
+    writer->BindReactor(writer->reactor_);
+    writer->reactor_->OnStarted(param.server_context, writer->request());
   }
 
   void* Deserialize(grpc_call* call, grpc_byte_buffer* req,
@@ -515,17 +592,15 @@ class CallbackServerStreamingHandler : public MethodHandler {
   }
 
  private:
-  std::function<experimental::ServerWriteReactor*(
-      ServerContext*, const RequestType*,
-      experimental::ServerCallbackWriter<ResponseType>*)>
+  std::function<experimental::ServerWriteReactor<RequestType, ResponseType>*()>
       func_;
 
   class ServerCallbackWriterImpl
       : public experimental::ServerCallbackWriter<ResponseType> {
    public:
     void Finish(Status s) override {
-      finish_tag_.Set(call_.call(), [this](bool) { MaybeDone(); },
-                      &finish_ops_);
+      finish_tag_.Set(
+          call_.call(), [this](bool) { MaybeDone(); }, &finish_ops_);
       finish_ops_.set_core_cq_tag(&finish_tag_);
 
       if (!ctx_->sent_initial_metadata_) {
@@ -537,24 +612,21 @@ class CallbackServerStreamingHandler : public MethodHandler {
         ctx_->sent_initial_metadata_ = true;
       }
       finish_ops_.ServerSendStatus(&ctx_->trailing_metadata_, s);
-      if (started_) {
-        call_.PerformOps(&finish_ops_);
-      } else {
-        finish_ops_at_start_ = true;
-      }
+      call_.PerformOps(&finish_ops_);
     }
 
     void SendInitialMetadata() override {
       GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
       callbacks_outstanding_++;
-      meta_tag_.Set(call_.call(),
-                    [this](bool ok) {
-                      if (reactor_ != nullptr) {
-                        reactor_->OnSendInitialMetadataDone(ok);
-                      }
-                      MaybeDone();
-                    },
-                    &meta_ops_);
+      meta_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnSendInitialMetadataDone(ok);
+            }
+            MaybeDone();
+          },
+          &meta_ops_);
       meta_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                     ctx_->initial_metadata_flags());
       if (ctx_->compression_level_set()) {
@@ -562,11 +634,7 @@ class CallbackServerStreamingHandler : public MethodHandler {
       }
       ctx_->sent_initial_metadata_ = true;
       meta_ops_.set_core_cq_tag(&meta_tag_);
-      if (started_) {
-        call_.PerformOps(&meta_ops_);
-      } else {
-        meta_ops_at_start_ = true;
-      }
+      call_.PerformOps(&meta_ops_);
     }
 
     void Write(const ResponseType* resp, WriteOptions options) override {
@@ -584,11 +652,7 @@ class CallbackServerStreamingHandler : public MethodHandler {
       }
       // TODO(vjpai): don't assert
       GPR_CODEGEN_ASSERT(write_ops_.SendMessage(*resp, options).ok());
-      if (started_) {
-        call_.PerformOps(&write_ops_);
-      } else {
-        write_ops_at_start_ = true;
-      }
+      call_.PerformOps(&write_ops_);
     }
 
     void WriteAndFinish(const ResponseType* resp, WriteOptions options,
@@ -612,14 +676,15 @@ class CallbackServerStreamingHandler : public MethodHandler {
           call_(*call),
           req_(req),
           call_requester_(std::move(call_requester)) {
-      write_tag_.Set(call_.call(),
-                     [this](bool ok) {
-                       if (reactor_ != nullptr) {
-                         reactor_->OnWriteDone(ok);
-                       }
-                       MaybeDone();
-                     },
-                     &write_ops_);
+      write_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnWriteDone(ok);
+            }
+            MaybeDone();
+          },
+          &write_ops_);
       write_ops_.set_core_cq_tag(&write_tag_);
     }
     ~ServerCallbackWriterImpl() { req_->~RequestType(); }
@@ -637,38 +702,20 @@ class CallbackServerStreamingHandler : public MethodHandler {
       }
     }
 
-    void StartOperations() {
-      started_ = true;
-      ctx_->BeginCompletionOp(&call_, [this](bool) { MaybeDone(); }, reactor_);
-      if (meta_ops_at_start_) {
-        call_.PerformOps(&meta_ops_);
-      }
-      if (write_ops_at_start_) {
-        call_.PerformOps(&write_ops_);
-      }
-      if (finish_ops_at_start_) {
-        call_.PerformOps(&finish_ops_);
-      }
-    }
-
     CallOpSet<CallOpSendInitialMetadata> meta_ops_;
     CallbackWithSuccessTag meta_tag_;
-    bool meta_ops_at_start_{false};
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
               CallOpServerSendStatus>
         finish_ops_;
     CallbackWithSuccessTag finish_tag_;
-    bool finish_ops_at_start_{false};
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage> write_ops_;
     CallbackWithSuccessTag write_tag_;
-    bool write_ops_at_start_{false};
 
     ServerContext* ctx_;
     Call call_;
     const RequestType* req_;
     std::function<void()> call_requester_;
-    experimental::ServerWriteReactor* reactor_;
-    bool started_{false};
+    experimental::ServerWriteReactor<RequestType, ResponseType>* reactor_;
     std::atomic_int callbacks_outstanding_{
         2};  // reserve for Finish and CompletionOp
   };
@@ -678,9 +725,8 @@ template <class RequestType, class ResponseType>
 class CallbackBidiHandler : public MethodHandler {
  public:
   CallbackBidiHandler(
-      std::function<experimental::ServerBidiReactor*(
-          ServerContext*,
-          experimental::ServerCallbackReaderWriter<RequestType, ResponseType>*)>
+      std::function<
+          experimental::ServerBidiReactor<RequestType, ResponseType>*()>
           func)
       : func_(std::move(func)) {}
   void RunHandler(const HandlerParameter& param) final {
@@ -694,25 +740,23 @@ class CallbackBidiHandler : public MethodHandler {
 
     if (!fail) {
       // Call the actual function handler and expect the user to call finish
-      stream->reactor_ =
-          CatchingReactorCreator<experimental::ServerBidiReactor>(
-              func_, param.server_context, stream);
+      stream->reactor_ = CatchingReactorCreator<
+          experimental::ServerBidiReactor<RequestType, ResponseType>>(func_);
       fail = (stream->reactor_ == nullptr);
     }
 
     if (fail) {
       // if deserialization failed, we need to fail the call
-      stream->Finish(status);
       stream->reactor_ =
-          new UnimplementedReactor<experimental::ServerBidiReactor>;
+          new UnimplementedBidiReactor<RequestType, ResponseType>;
     }
-    stream->StartOperations();
+
+    stream->BindReactor(stream->reactor_);
+    stream->reactor_->OnStarted(param.server_context);
   }
 
  private:
-  std::function<experimental::ServerBidiReactor*(
-      ServerContext*,
-      experimental::ServerCallbackReaderWriter<RequestType, ResponseType>*)>
+  std::function<experimental::ServerBidiReactor<RequestType, ResponseType>*()>
       func_;
 
   class ServerCallbackReaderWriterImpl
@@ -720,8 +764,8 @@ class CallbackBidiHandler : public MethodHandler {
                                                         ResponseType> {
    public:
     void Finish(Status s) override {
-      finish_tag_.Set(call_.call(), [this](bool) { MaybeDone(); },
-                      &finish_ops_);
+      finish_tag_.Set(
+          call_.call(), [this](bool) { MaybeDone(); }, &finish_ops_);
       finish_ops_.set_core_cq_tag(&finish_tag_);
 
       if (!ctx_->sent_initial_metadata_) {
@@ -733,24 +777,21 @@ class CallbackBidiHandler : public MethodHandler {
         ctx_->sent_initial_metadata_ = true;
       }
       finish_ops_.ServerSendStatus(&ctx_->trailing_metadata_, s);
-      if (started_) {
-        call_.PerformOps(&finish_ops_);
-      } else {
-        finish_ops_at_start_ = true;
-      }
+      call_.PerformOps(&finish_ops_);
     }
 
     void SendInitialMetadata() override {
       GPR_CODEGEN_ASSERT(!ctx_->sent_initial_metadata_);
       callbacks_outstanding_++;
-      meta_tag_.Set(call_.call(),
-                    [this](bool ok) {
-                      if (reactor_ != nullptr) {
-                        reactor_->OnSendInitialMetadataDone(ok);
-                      }
-                      MaybeDone();
-                    },
-                    &meta_ops_);
+      meta_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnSendInitialMetadataDone(ok);
+            }
+            MaybeDone();
+          },
+          &meta_ops_);
       meta_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
                                     ctx_->initial_metadata_flags());
       if (ctx_->compression_level_set()) {
@@ -758,11 +799,7 @@ class CallbackBidiHandler : public MethodHandler {
       }
       ctx_->sent_initial_metadata_ = true;
       meta_ops_.set_core_cq_tag(&meta_tag_);
-      if (started_) {
-        call_.PerformOps(&meta_ops_);
-      } else {
-        meta_ops_at_start_ = true;
-      }
+      call_.PerformOps(&meta_ops_);
     }
 
     void Write(const ResponseType* resp, WriteOptions options) override {
@@ -780,11 +817,7 @@ class CallbackBidiHandler : public MethodHandler {
       }
       // TODO(vjpai): don't assert
       GPR_CODEGEN_ASSERT(write_ops_.SendMessage(*resp, options).ok());
-      if (started_) {
-        call_.PerformOps(&write_ops_);
-      } else {
-        write_ops_at_start_ = true;
-      }
+      call_.PerformOps(&write_ops_);
     }
 
     void WriteAndFinish(const ResponseType* resp, WriteOptions options,
@@ -800,11 +833,7 @@ class CallbackBidiHandler : public MethodHandler {
     void Read(RequestType* req) override {
       callbacks_outstanding_++;
       read_ops_.RecvMessage(req);
-      if (started_) {
-        call_.PerformOps(&read_ops_);
-      } else {
-        read_ops_at_start_ = true;
-      }
+      call_.PerformOps(&read_ops_);
     }
 
    private:
@@ -813,43 +842,28 @@ class CallbackBidiHandler : public MethodHandler {
     ServerCallbackReaderWriterImpl(ServerContext* ctx, Call* call,
                                    std::function<void()> call_requester)
         : ctx_(ctx), call_(*call), call_requester_(std::move(call_requester)) {
-      write_tag_.Set(call_.call(),
-                     [this](bool ok) {
-                       if (reactor_ != nullptr) {
-                         reactor_->OnWriteDone(ok);
-                       }
-                       MaybeDone();
-                     },
-                     &write_ops_);
+      write_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnWriteDone(ok);
+            }
+            MaybeDone();
+          },
+          &write_ops_);
       write_ops_.set_core_cq_tag(&write_tag_);
-      read_tag_.Set(call_.call(),
-                    [this](bool ok) {
-                      if (reactor_ != nullptr) {
-                        reactor_->OnReadDone(ok);
-                      }
-                      MaybeDone();
-                    },
-                    &read_ops_);
+      read_tag_.Set(
+          call_.call(),
+          [this](bool ok) {
+            if (reactor_ != nullptr) {
+              reactor_->OnReadDone(ok);
+            }
+            MaybeDone();
+          },
+          &read_ops_);
       read_ops_.set_core_cq_tag(&read_tag_);
     }
     ~ServerCallbackReaderWriterImpl() {}
-
-    void StartOperations() {
-      started_ = true;
-      if (read_ops_at_start_) {
-        call_.PerformOps(&read_ops_);
-      }
-      ctx_->BeginCompletionOp(&call_, [this](bool) { MaybeDone(); }, reactor_);
-      if (meta_ops_at_start_) {
-        call_.PerformOps(&meta_ops_);
-      }
-      if (write_ops_at_start_) {
-        call_.PerformOps(&write_ops_);
-      }
-      if (finish_ops_at_start_) {
-        call_.PerformOps(&finish_ops_);
-      }
-    }
 
     void MaybeDone() {
       if (--callbacks_outstanding_ == 0) {
@@ -864,24 +878,19 @@ class CallbackBidiHandler : public MethodHandler {
 
     CallOpSet<CallOpSendInitialMetadata> meta_ops_;
     CallbackWithSuccessTag meta_tag_;
-    bool meta_ops_at_start_{false};
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage,
               CallOpServerSendStatus>
         finish_ops_;
     CallbackWithSuccessTag finish_tag_;
-    bool finish_ops_at_start_{false};
     CallOpSet<CallOpSendInitialMetadata, CallOpSendMessage> write_ops_;
     CallbackWithSuccessTag write_tag_;
-    bool write_ops_at_start_{false};
     CallOpSet<CallOpRecvMessage<RequestType>> read_ops_;
     CallbackWithSuccessTag read_tag_;
-    bool read_ops_at_start_{false};
 
     ServerContext* ctx_;
     Call call_;
     std::function<void()> call_requester_;
-    experimental::ServerBidiReactor* reactor_;
-    bool started_{false};
+    experimental::ServerBidiReactor<RequestType, ResponseType>* reactor_;
     std::atomic_int callbacks_outstanding_{
         2};  // reserve for Finish and CompletionOp
   };
