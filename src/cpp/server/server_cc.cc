@@ -59,7 +59,7 @@ namespace {
 #define DEFAULT_MAX_SYNC_SERVER_THREADS INT_MAX
 
 // How many callback requests of each method should we pre-register at start
-#define DEFAULT_CALLBACK_REQS_PER_METHOD 32
+#define DEFAULT_CALLBACK_REQS_PER_METHOD 1
 
 // What is the limit for outstanding requests per method
 #define MAXIMUM_CALLBACK_REQS_PER_METHOD 100
@@ -347,10 +347,9 @@ class Server::SyncRequest final : public internal::CompletionQueueTag {
 class Server::CallbackRequest final : public internal::CompletionQueueTag {
  public:
   CallbackRequest(Server* server, Server::MethodReqList* list,
-		  internal::RpcServiceMethod* method,
-                  void* method_tag)
+                  internal::RpcServiceMethod* method, void* method_tag)
       : server_(server),
-	req_list_(list),
+        req_list_(list),
         method_(method),
         method_tag_(method_tag),
         has_request_payload_(
@@ -413,15 +412,26 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       bool new_ok = ok;
       GPR_ASSERT(!req_->FinalizeResult(&ignored, &new_ok));
       GPR_ASSERT(ignored == req_);
+      bool may_spawn_new = false;
 
-      {
-	std::lock_guard<std::mutex> l(req_->server_->callback_reqs_mu_);
-	req_->req_list_->erase(req_->req_list_iterator_);
-      }
       if (!ok) {
-        // The call has been shutdown
+        // The call has been shutdown. Let it stay in the list
+        // since the server shutdown will delete it.
         req_->Clear();
         return;
+      }
+      {
+        std::lock_guard<std::mutex> l(req_->server_->callback_reqs_mu_);
+        req_->req_list_->erase(req_->req_list_iterator_);
+        // If this was the last request in the list, set up a new one
+        if (req_->req_list_->empty()) {
+          may_spawn_new = true;
+        }
+      }
+      if (may_spawn_new) {
+        auto* new_req = new CallbackRequest(req_->server_, req_->req_list_,
+                                            req_->method_, req_->method_tag_);
+        new_req->Request();
       }
 
       // Bind the call, deadline, and metadata from what we got
@@ -730,7 +740,7 @@ Server::~Server() {
 
   grpc_server_destroy(server_);
   for (auto* method_list : callback_reqs_) {
-    for (auto* cbreq: *method_list) {
+    for (auto* cbreq : *method_list) {
       delete cbreq;
     }
     delete method_list;
@@ -818,8 +828,8 @@ bool Server::RegisterService(const grpc::string* host, Service* service) {
       auto* method_req_list = callback_reqs_.back();
       // TODO(vjpai): Register these dynamically based on need
       for (int i = 0; i < DEFAULT_CALLBACK_REQS_PER_METHOD; i++) {
-        new CallbackRequest(this, method_req_list,
-			    method, method_registration_tag);
+        new CallbackRequest(this, method_req_list, method,
+                            method_registration_tag);
       }
       // Enqueue it so that it will be Request'ed later once
       // all request matchers are created at core server startup
