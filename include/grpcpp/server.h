@@ -248,8 +248,15 @@ class Server : public ServerInterface, private GrpcLibraryCodegen {
   /// the \a sync_server_cqs)
   std::vector<std::unique_ptr<SyncRequestThreadManager>> sync_req_mgrs_;
 
-  /// Outstanding callback requests
-  std::vector<std::unique_ptr<CallbackRequest>> callback_reqs_;
+  // Outstanding callback requests. The vector is indexed by method with a
+  // list per method. Each element should store its own iterator
+  // in the list and should erase it when the request is actually bound to
+  // an RPC. Synchronize this list with its own mu_ (not the server mu_) since
+  // these must be active at Shutdown when the server mu_ is locked
+  // TODO(vjpai): Merge with the core request matcher to avoid duplicate work
+  using MethodReqList = std::list<CallbackRequest*>;
+  std::mutex callback_reqs_mu_;
+  std::vector<MethodReqList*> callback_reqs_;
 
   // Server status
   std::mutex mu_;

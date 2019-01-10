@@ -61,6 +61,9 @@ namespace {
 // How many callback requests of each method should we pre-register at start
 #define DEFAULT_CALLBACK_REQS_PER_METHOD 32
 
+// What is the limit for outstanding requests per method
+#define MAXIMUM_CALLBACK_REQS_PER_METHOD 100
+
 class DefaultGlobalCallbacks final : public Server::GlobalCallbacks {
  public:
   ~DefaultGlobalCallbacks() override {}
@@ -343,9 +346,11 @@ class Server::SyncRequest final : public internal::CompletionQueueTag {
 
 class Server::CallbackRequest final : public internal::CompletionQueueTag {
  public:
-  CallbackRequest(Server* server, internal::RpcServiceMethod* method,
+  CallbackRequest(Server* server, Server::MethodReqList* list,
+		  internal::RpcServiceMethod* method,
                   void* method_tag)
       : server_(server),
+	req_list_(list),
         method_(method),
         method_tag_(method_tag),
         has_request_payload_(
@@ -409,6 +414,10 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       GPR_ASSERT(!req_->FinalizeResult(&ignored, &new_ok));
       GPR_ASSERT(ignored == req_);
 
+      {
+	std::lock_guard<std::mutex> l(req_->server_->callback_reqs_mu_);
+	req_->req_list_->erase(req_->req_list_iterator_);
+      }
       if (!ok) {
         // The call has been shutdown
         req_->Clear();
@@ -492,9 +501,14 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     request_payload_ = nullptr;
     request_ = nullptr;
     request_status_ = Status();
+    std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
+    req_list_->push_front(this);
+    req_list_iterator_ = req_list_->begin();
   }
 
   Server* const server_;
+  Server::MethodReqList* req_list_;
+  Server::MethodReqList::iterator req_list_iterator_;
   internal::RpcServiceMethod* const method_;
   void* const method_tag_;
   const bool has_request_payload_;
@@ -715,6 +729,12 @@ Server::~Server() {
   }
 
   grpc_server_destroy(server_);
+  for (auto* method_list : callback_reqs_) {
+    for (auto* cbreq: *method_list) {
+      delete cbreq;
+    }
+    delete method_list;
+  }
 }
 
 void Server::SetGlobalCallbacks(GlobalCallbacks* callbacks) {
@@ -794,10 +814,12 @@ bool Server::RegisterService(const grpc::string* host, Service* service) {
       }
     } else {
       // a callback method. Register at least some callback requests
+      callback_reqs_.push_back(new Server::MethodReqList);
+      auto* method_req_list = callback_reqs_.back();
       // TODO(vjpai): Register these dynamically based on need
       for (int i = 0; i < DEFAULT_CALLBACK_REQS_PER_METHOD; i++) {
-        auto* req = new CallbackRequest(this, method, method_registration_tag);
-        callback_reqs_.emplace_back(req);
+        new CallbackRequest(this, method_req_list,
+			    method, method_registration_tag);
       }
       // Enqueue it so that it will be Request'ed later once
       // all request matchers are created at core server startup
@@ -889,8 +911,10 @@ void Server::Start(ServerCompletionQueue** cqs, size_t num_cqs) {
     (*it)->Start();
   }
 
-  for (auto& cbreq : callback_reqs_) {
-    cbreq->Request();
+  for (auto* cbmethods : callback_reqs_) {
+    for (auto* cbreq : *cbmethods) {
+      cbreq->Request();
+    }
   }
 
   if (default_health_check_service_impl != nullptr) {
