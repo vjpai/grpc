@@ -59,9 +59,9 @@ namespace {
 #define DEFAULT_MAX_SYNC_SERVER_THREADS INT_MAX
 
 // How many callback requests of each method should we pre-register at start
-#define DEFAULT_CALLBACK_REQS_PER_METHOD 1
+#define DEFAULT_CALLBACK_REQS_PER_METHOD 32
 
-// What is the limit for outstanding requests per method
+// What is the limit for outstanding requests per method waiting to match
 #define MAXIMUM_CALLBACK_REQS_PER_METHOD 100
 
 class DefaultGlobalCallbacks final : public Server::GlobalCallbacks {
@@ -357,6 +357,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
             method->method_type() == internal::RpcMethod::SERVER_STREAMING),
         cq_(server->CallbackCQ()),
         tag_(this) {
+    std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
     Setup();
   }
 
@@ -481,16 +482,22 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
           internal::MethodHandler::HandlerParameter(
               call_, &req_->ctx_, req_->request_, req_->request_status_,
               [this] {
-                req_->Reset();
+                {
+                  std::lock_guard<std::mutex> l(
+                      req_->server_->callback_reqs_mu_);
+                  if (req_->req_list_->size() <
+                      MAXIMUM_CALLBACK_REQS_PER_METHOD) {
+                    req_->Clear();
+                    req_->Setup();
+                  } else {
+                    delete req_;
+                    return;
+                  }
+                }
                 req_->Request();
               }));
     }
   };
-
-  void Reset() {
-    Clear();
-    Setup();
-  }
 
   void Clear() {
     if (call_details_) {
@@ -505,13 +512,13 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     interceptor_methods_.ClearState();
   }
 
+  /// Setup must be called while holding server_->callback_reqs_mu_);
   void Setup() {
     grpc_metadata_array_init(&request_metadata_);
     ctx_.Setup(gpr_inf_future(GPR_CLOCK_REALTIME));
     request_payload_ = nullptr;
     request_ = nullptr;
     request_status_ = Status();
-    std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
     req_list_->push_front(this);
     req_list_iterator_ = req_list_->begin();
   }
