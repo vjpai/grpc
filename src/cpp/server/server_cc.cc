@@ -417,8 +417,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
 
       if (!ok) {
         // The call has been shutdown. Let it stay in the list
-        // since the server shutdown will delete it.
-        req_->Clear();
+        // since the server shutdown will delete and Clear it.
         return;
       }
       {
@@ -490,6 +489,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
                     req_->Clear();
                     req_->Setup();
                   } else {
+                    // We can free up this request because there are too many
                     delete req_;
                     return;
                   }
