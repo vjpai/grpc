@@ -358,7 +358,6 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
         cq_(server->CallbackCQ()),
         tag_(this) {
     server_->callback_reqs_outstanding_++;
-    std::lock_guard<std::mutex> l(list->reqs_mu);
     Setup();
   }
 
@@ -414,7 +413,6 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       bool new_ok = ok;
       GPR_ASSERT(!req_->FinalizeResult(&ignored, &new_ok));
       GPR_ASSERT(ignored == req_);
-      bool may_spawn_new = false;
 
       if (!ok) {
         // The call has been shutdown. Let it stay in the list
@@ -422,6 +420,8 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
         req_->Done();
         return;
       }
+
+      bool may_spawn_new = false;
       {
         std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
         req_->req_list_->reqs_list.erase(req_->req_list_iterator_);
@@ -490,7 +490,6 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
                 if (req_->server_->callback_reqs_outstanding_ <
                     MAXIMUM_CALLBACK_REQS_OUTSTANDING) {
                   req_->Clear();
-                  std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
                   req_->Setup();
                 } else {
                   // We can free up this request because there are too many
@@ -516,13 +515,13 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     interceptor_methods_.ClearState();
   }
 
-  /// Setup must be called while holding req_list_->reqs_mu
   void Setup() {
     grpc_metadata_array_init(&request_metadata_);
     ctx_.Setup(gpr_inf_future(GPR_CLOCK_REALTIME));
     request_payload_ = nullptr;
     request_ = nullptr;
     request_status_ = Status();
+    std::lock_guard<std::mutex> l(req_list_->reqs_mu);
     req_list_->reqs_list.push_front(this);
     req_list_iterator_ = req_list_->reqs_list.begin();
   }
