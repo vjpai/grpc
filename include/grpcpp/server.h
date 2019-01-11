@@ -265,6 +265,8 @@ class Server : public ServerInterface, private GrpcLibraryCodegen {
   bool shutdown_notified_;  // Was notify called on the shutdown_cv_
 
   std::condition_variable shutdown_cv_;
+  std::condition_variable callback_reqs_done_cv_;
+  std::atomic_int callback_reqs_outstanding_{0};
 
   std::shared_ptr<GlobalCallbacks> global_callbacks_;
 

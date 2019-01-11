@@ -357,6 +357,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
             method->method_type() == internal::RpcMethod::SERVER_STREAMING),
         cq_(server->CallbackCQ()),
         tag_(this) {
+    server_->callback_reqs_outstanding_++;
     std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
     Setup();
   }
@@ -418,6 +419,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       if (!ok) {
         // The call has been shutdown. Let it stay in the list
         // since the server shutdown will delete and Clear it.
+        req_->Done();
         return;
       }
       {
@@ -490,6 +492,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
                     req_->Setup();
                   } else {
                     // We can free up this request because there are too many
+                    req_->Done();
                     delete req_;
                     return;
                   }
@@ -521,6 +524,12 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     request_status_ = Status();
     req_list_->push_front(this);
     req_list_iterator_ = req_list_->begin();
+  }
+
+  void Done() {
+    if (--server_->callback_reqs_outstanding_ == 0) {
+      server_->callback_reqs_done_cv_.notify_one();
+    }
   }
 
   Server* const server_;
@@ -974,6 +983,10 @@ void Server::ShutdownInternal(gpr_timespec deadline) {
     for (auto it = sync_req_mgrs_.begin(); it != sync_req_mgrs_.end(); it++) {
       (*it)->Wait();
     }
+
+    // Wait for all outstanding callback requests to complete
+    callback_reqs_done_cv_.wait(
+        lock, [this] { return callback_reqs_outstanding_ == 0; });
 
     // Drain the shutdown queue (if the previous call to AsyncNext() timed out
     // and we didn't remove the tag from the queue yet)
