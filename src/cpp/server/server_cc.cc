@@ -61,8 +61,8 @@ namespace {
 // How many callback requests of each method should we pre-register at start
 #define DEFAULT_CALLBACK_REQS_PER_METHOD 32
 
-// What is the limit for outstanding requests per method waiting to match
-#define MAXIMUM_CALLBACK_REQS_PER_METHOD 100
+// What is the (soft) limit for outstanding requests in the server
+#define MAXIMUM_CALLBACK_REQS_OUTSTANDING 30000
 
 class DefaultGlobalCallbacks final : public Server::GlobalCallbacks {
  public:
@@ -358,7 +358,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
         cq_(server->CallbackCQ()),
         tag_(this) {
     server_->callback_reqs_outstanding_++;
-    std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
+    std::lock_guard<std::mutex> l(list->reqs_mu);
     Setup();
   }
 
@@ -423,10 +423,10 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
         return;
       }
       {
-        std::lock_guard<std::mutex> l(req_->server_->callback_reqs_mu_);
-        req_->req_list_->erase(req_->req_list_iterator_);
+        std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
+        req_->req_list_->reqs_list.erase(req_->req_list_iterator_);
         // If this was the last request in the list, set up a new one
-        if (req_->req_list_->empty()) {
+        if (req_->req_list_->reqs_list.empty()) {
           may_spawn_new = true;
         }
       }
@@ -483,19 +483,20 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
           internal::MethodHandler::HandlerParameter(
               call_, &req_->ctx_, req_->request_, req_->request_status_,
               [this] {
-                {
-                  std::lock_guard<std::mutex> l(
-                      req_->server_->callback_reqs_mu_);
-                  if (req_->req_list_->size() <
-                      MAXIMUM_CALLBACK_REQS_PER_METHOD) {
-                    req_->Clear();
-                    req_->Setup();
-                  } else {
-                    // We can free up this request because there are too many
-                    req_->Done();
-                    delete req_;
-                    return;
-                  }
+                // Recycle this request if there aren't too many outstanding.
+                // Note that we don't have to worry about a case where there
+                // are no requests waiting to match for this method since that
+                // is already taken care of when binding a request to a call.
+                if (req_->server_->callback_reqs_outstanding_ <
+                    MAXIMUM_CALLBACK_REQS_OUTSTANDING) {
+                  req_->Clear();
+                  std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
+                  req_->Setup();
+                } else {
+                  // We can free up this request because there are too many
+                  req_->Done();
+                  delete req_;
+                  return;
                 }
                 req_->Request();
               }));
@@ -515,15 +516,15 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     interceptor_methods_.ClearState();
   }
 
-  /// Setup must be called while holding server_->callback_reqs_mu_);
+  /// Setup must be called while holding req_list_->reqs_mu
   void Setup() {
     grpc_metadata_array_init(&request_metadata_);
     ctx_.Setup(gpr_inf_future(GPR_CLOCK_REALTIME));
     request_payload_ = nullptr;
     request_ = nullptr;
     request_status_ = Status();
-    req_list_->push_front(this);
-    req_list_iterator_ = req_list_->begin();
+    req_list_->reqs_list.push_front(this);
+    req_list_iterator_ = req_list_->reqs_list.begin();
   }
 
   void Done() {
@@ -756,7 +757,7 @@ Server::~Server() {
 
   grpc_server_destroy(server_);
   for (auto* method_list : callback_reqs_) {
-    for (auto* cbreq : *method_list) {
+    for (auto* cbreq : method_list->reqs_list) {
       delete cbreq;
     }
     delete method_list;
@@ -938,7 +939,7 @@ void Server::Start(ServerCompletionQueue** cqs, size_t num_cqs) {
   }
 
   for (auto* cbmethods : callback_reqs_) {
-    for (auto* cbreq : *cbmethods) {
+    for (auto* cbreq : cbmethods->reqs_list) {
       cbreq->Request();
     }
   }

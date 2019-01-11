@@ -254,8 +254,11 @@ class Server : public ServerInterface, private GrpcLibraryCodegen {
   // an RPC. Synchronize this list with its own mu_ (not the server mu_) since
   // these must be active at Shutdown when the server mu_ is locked
   // TODO(vjpai): Merge with the core request matcher to avoid duplicate work
-  using MethodReqList = std::list<CallbackRequest*>;
-  std::mutex callback_reqs_mu_;
+  struct MethodReqList {
+    std::mutex reqs_mu;
+    std::list<CallbackRequest*> reqs_list;
+    using iterator = decltype(reqs_list)::iterator;
+  };
   std::vector<MethodReqList*> callback_reqs_;
 
   // Server status
