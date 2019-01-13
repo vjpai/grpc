@@ -368,7 +368,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     }
   }
 
-  void Request() {
+  bool Request() {
     if (method_tag_) {
       if (GRPC_CALL_OK !=
           grpc_server_request_registered_call(
@@ -376,7 +376,7 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
               &request_metadata_,
               has_request_payload_ ? &request_payload_ : nullptr, cq_->cq(),
               cq_->cq(), static_cast<void*>(&tag_))) {
-        return;
+        return false;
       }
     } else {
       if (!call_details_) {
@@ -386,9 +386,10 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       if (grpc_server_request_call(server_->c_server(), &call_, call_details_,
                                    &request_metadata_, cq_->cq(), cq_->cq(),
                                    static_cast<void*>(&tag_)) != GRPC_CALL_OK) {
-        return;
+        return false;
       }
     }
+    return true;
   }
 
   bool FinalizeResult(void** tag, bool* status) override { return false; }
@@ -439,7 +440,12 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       if (spawn_new) {
         auto* new_req = new CallbackRequest(req_->server_, req_->req_list_,
                                             req_->method_, req_->method_tag_);
-        new_req->Request();
+        if (!new_req->Request()) {
+          // The server must have just decided to shutdown
+          std::lock_guard<std::mutex> l(new_req->req_list_->reqs_mu);
+          new_req->req_list_->reqs_list.erase(new_req->req_list_iterator_);
+          delete new_req;
+        }
       }
 
       // Bind the call, deadline, and metadata from what we got
@@ -502,7 +508,10 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
                   delete req_;
                   return;
                 }
-                req_->Request();
+                if (!req_->Request()) {
+                  // The server must have just decided to shutdown.
+                  delete req_;
+                }
               }));
     }
   };
@@ -939,7 +948,7 @@ void Server::Start(ServerCompletionQueue** cqs, size_t num_cqs) {
 
   for (auto* cbmethods : callback_reqs_) {
     for (auto* cbreq : cbmethods->reqs_list) {
-      cbreq->Request();
+      GPR_ASSERT(cbreq->Request());
     }
   }
 
