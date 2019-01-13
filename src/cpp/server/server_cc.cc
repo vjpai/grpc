@@ -361,7 +361,12 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     Setup();
   }
 
-  ~CallbackRequest() { Clear(); }
+  ~CallbackRequest() {
+    Clear();
+    if (--server_->callback_reqs_outstanding_ == 0) {
+      server_->callback_reqs_done_cv_.notify_one();
+    }
+  }
 
   void Request() {
     if (method_tag_) {
@@ -414,23 +419,24 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
       GPR_ASSERT(!req_->FinalizeResult(&ignored, &new_ok));
       GPR_ASSERT(ignored == req_);
 
-      if (!ok) {
-        // The call has been shutdown. Let it stay in the list
-        // since the server shutdown will delete and Clear it.
-        req_->Done();
-        return;
-      }
-
-      bool may_spawn_new = false;
+      bool spawn_new = false;
       {
         std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
         req_->req_list_->reqs_list.erase(req_->req_list_iterator_);
-        // If this was the last request in the list, set up a new one
+        if (!ok) {
+          // The call has been shutdown.
+          // Delete its contents to free up the request.
+          delete req_;
+          return;
+        }
+
+        // If this was the last request in the list, set up a new one, but
+        // do it outside the lock since the Request could otherwise deadlock
         if (req_->req_list_->reqs_list.empty()) {
-          may_spawn_new = true;
+          spawn_new = true;
         }
       }
-      if (may_spawn_new) {
+      if (spawn_new) {
         auto* new_req = new CallbackRequest(req_->server_, req_->req_list_,
                                             req_->method_, req_->method_tag_);
         new_req->Request();
@@ -493,7 +499,6 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
                   req_->Setup();
                 } else {
                   // We can free up this request because there are too many
-                  req_->Done();
                   delete req_;
                   return;
                 }
@@ -524,12 +529,6 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
     std::lock_guard<std::mutex> l(req_list_->reqs_mu);
     req_list_->reqs_list.push_front(this);
     req_list_iterator_ = req_list_->reqs_list.begin();
-  }
-
-  void Done() {
-    if (--server_->callback_reqs_outstanding_ == 0) {
-      server_->callback_reqs_done_cv_.notify_one();
-    }
   }
 
   Server* const server_;
@@ -756,9 +755,10 @@ Server::~Server() {
 
   grpc_server_destroy(server_);
   for (auto* method_list : callback_reqs_) {
-    for (auto* cbreq : method_list->reqs_list) {
-      delete cbreq;
-    }
+    // The entries of the method_list should have already been emptied
+    // during Shutdown as each request is failed by Shutdown. Check that
+    // this actually happened.
+    GPR_ASSERT(method_list->reqs_list.empty());
     delete method_list;
   }
 }
