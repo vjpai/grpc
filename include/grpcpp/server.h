@@ -269,10 +269,14 @@ class Server : public ServerInterface, private GrpcLibraryCodegen {
 
   std::condition_variable shutdown_cv_;
 
-  // It is ok (but not required) to nest callback_reqs_mu_ under mu_
+  // It is ok (but not required) to nest callback_reqs_mu_ under mu_ .
   // Incrementing callback_reqs_outstanding_ is ok without a lock
   // but it should only be decremented under the lock in case it is the
-  // last request and enables the server shutdown.
+  // last request and enables the server shutdown. The increment is
+  // performance-critical since it happens during periods of increasing
+  // load; the decrement happens only when memory is maxed out, during server
+  // shutdown, or (possibly in a future version) during decreasing load, so
+  // it is less performance-critical.
   std::mutex callback_reqs_mu_;
   std::condition_variable callback_reqs_done_cv_;
   std::atomic_int callback_reqs_outstanding_{0};
