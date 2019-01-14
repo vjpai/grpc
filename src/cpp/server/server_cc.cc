@@ -363,6 +363,10 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
 
   ~CallbackRequest() {
     Clear();
+
+    // The counter of outstanding requests must be decremented
+    // under a lock in case it causes the server shutdown.
+    std::lock_guard<std::mutex> l(server_->callback_reqs_mu_);
     if (--server_->callback_reqs_outstanding_ == 0) {
       server_->callback_reqs_done_cv_.notify_one();
     }
@@ -422,11 +426,15 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
 
       bool spawn_new = false;
       {
-        std::lock_guard<std::mutex> l(req_->req_list_->reqs_mu);
+        std::unique_lock<std::mutex> l(req_->req_list_->reqs_mu);
         req_->req_list_->reqs_list.erase(req_->req_list_iterator_);
         if (!ok) {
           // The call has been shutdown.
           // Delete its contents to free up the request.
+          // First release the lock in case the deletion of the request
+          // completes the full server shutdown and allows the destructor
+          // of the req_list to proceed.
+          l.unlock();
           delete req_;
           return;
         }
@@ -441,9 +449,14 @@ class Server::CallbackRequest final : public internal::CompletionQueueTag {
         auto* new_req = new CallbackRequest(req_->server_, req_->req_list_,
                                             req_->method_, req_->method_tag_);
         if (!new_req->Request()) {
-          // The server must have just decided to shutdown
-          std::lock_guard<std::mutex> l(new_req->req_list_->reqs_mu);
-          new_req->req_list_->reqs_list.erase(new_req->req_list_iterator_);
+          // The server must have just decided to shutdown. Erase
+          // from the list under lock but release the lock before
+          // deleting the new_req (in case that request was what
+          // would allow the destruction of the req_list)
+          {
+            std::lock_guard<std::mutex> l(new_req->req_list_->reqs_mu);
+            new_req->req_list_->reqs_list.erase(new_req->req_list_iterator_);
+          }
           delete new_req;
         }
       }
@@ -994,8 +1007,11 @@ void Server::ShutdownInternal(gpr_timespec deadline) {
     }
 
     // Wait for all outstanding callback requests to complete
-    callback_reqs_done_cv_.wait(
-        lock, [this] { return callback_reqs_outstanding_ == 0; });
+    {
+      std::unique_lock<std::mutex> cblock(callback_reqs_mu_);
+      callback_reqs_done_cv_.wait(
+          cblock, [this] { return callback_reqs_outstanding_ == 0; });
+    }
 
     // Drain the shutdown queue (if the previous call to AsyncNext() timed out
     // and we didn't remove the tag from the queue yet)
