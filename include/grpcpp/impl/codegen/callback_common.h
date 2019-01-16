@@ -84,7 +84,8 @@ class CallbackWithStatusTag
                         CompletionQueueTag* ops)
       : call_(call), func_(std::move(f)), ops_(ops) {
     g_core_codegen_interface->grpc_call_ref(call);
-    functor_run = &CallbackWithStatusTag::StaticRun;
+    functor_inline = nullptr;
+    functor_deferred = &CallbackWithStatusTag::StaticRun;
   }
   ~CallbackWithStatusTag() {}
   Status* status_ptr() { return &status_; }
@@ -146,11 +147,6 @@ class CallbackWithSuccessTag
 
   CallbackWithSuccessTag() : call_(nullptr) {}
 
-  CallbackWithSuccessTag(grpc_call* call, std::function<void(bool)> f,
-                         CompletionQueueTag* ops) {
-    Set(call, f, ops);
-  }
-
   CallbackWithSuccessTag(const CallbackWithSuccessTag&) = delete;
   CallbackWithSuccessTag& operator=(const CallbackWithSuccessTag&) = delete;
 
@@ -159,45 +155,45 @@ class CallbackWithSuccessTag
   // Set can only be called on a default-constructed or Clear'ed tag.
   // It should never be called on a tag that was constructed with arguments
   // or on a tag that has been Set before unless the tag has been cleared.
-  void Set(grpc_call* call, std::function<void(bool)> f,
+  void Set(grpc_call* call, std::function<void(bool)> func_inline,
+           std::function<void(bool)> func_deferred,
            CompletionQueueTag* ops) {
     GPR_CODEGEN_ASSERT(call_ == nullptr);
     g_core_codegen_interface->grpc_call_ref(call);
     call_ = call;
-    func_ = std::move(f);
+    func_inline_ = std::move(func_inline);
+    func_deferred_ = std::move(func_deferred);
     ops_ = ops;
-    functor_run = &CallbackWithSuccessTag::StaticRun;
+    functor_inline = &CallbackWithSuccessTag::StaticInlineRun;
+    functor_deferred = &CallbackWithSuccessTag::StaticDeferredRun;
   }
 
   void Clear() {
     if (call_ != nullptr) {
       grpc_call* call = call_;
       call_ = nullptr;
-      func_ = nullptr;
+      func_inline_ = nullptr;
+      func_deferred_ = nullptr;
       g_core_codegen_interface->grpc_call_unref(call);
     }
   }
 
   CompletionQueueTag* ops() { return ops_; }
 
-  // force_run can not be performed on a tag if operations using this tag
-  // have been sent to PerformOpsOnCall. It is intended for error conditions
-  // that are detected before the operations are internally processed.
-  void force_run(bool ok) { Run(ok); }
-
   /// check if this tag is currently set
   operator bool() const { return call_ != nullptr; }
 
  private:
   grpc_call* call_;
-  std::function<void(bool)> func_;
+  std::function<void(bool)> func_inline_;
+  std::function<void(bool)> func_deferred_;
   CompletionQueueTag* ops_;
 
-  static void StaticRun(grpc_experimental_completion_queue_functor* cb,
-                        int ok) {
-    static_cast<CallbackWithSuccessTag*>(cb)->Run(static_cast<bool>(ok));
+  static int StaticInlineRun(grpc_experimental_completion_queue_functor* cb,
+                             int ok, int* new_ok) {
+    return static_cast<CallbackWithSuccessTag*>(cb)->InlineRun(static_cast<bool>(ok),);
   }
-  void Run(bool ok) {
+  int InlineRun(bool ok, int* new_ok ) {
     void* ignored = ops_;
     // Allow a "false" return value from FinalizeResult to silence the
     // callback, just as it silences a CQ tag in the async cases
@@ -206,8 +202,11 @@ class CallbackWithSuccessTag
     GPR_CODEGEN_ASSERT(ignored == ops);
 
     if (do_callback) {
-      CatchingCallback(func_, ok);
+      CatchingCallback(func_inline_, ok);
     }
+    return ok;
+  }
+  int DeferredRun(bool ok) {
   }
 };
 

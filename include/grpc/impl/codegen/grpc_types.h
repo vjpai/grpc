@@ -680,13 +680,22 @@ typedef enum {
     Its "run" value should be assigned to some non-member function, such as
     a static method. */
 typedef struct grpc_experimental_completion_queue_functor {
-  /** The run member specifies a function that will be called when this
-      tag is extracted from the completion queue. Its arguments will be a
-      pointer to this functor and a boolean that indicates whether the
-      operation succeeded (non-zero) or failed (zero) */
-  void (*functor_run)(struct grpc_experimental_completion_queue_functor*, int);
+  /** The run member specifies two functions that will be called when this tag
+      is extracted from the completion queue. The first is called inline, and
+      the second is called "deferred," at the point of the next exit from gRPC
+      core. The inline one should be used for library code that is tightly
+      controlled, and the deferred one should be used for user code (or library
+      code that can trigger other operations on RPCs). The in arguments will be
+      a pointer to this functor and a boolean that indicates whether the
+      operation succeeded (non-zero) or failed (zero). Either function pointer
+      can be NULL if they are not relevant. The return value of the inline
+      function is whether to actually perform the deferred callback.
+      The out argument (last argument) of the inline function is the new
+      success value to pass to the deferred function */
+  int (*functor_inline)(struct grpc_experimental_completion_queue_functor*, int, int*);
+  void (*functor_deferred)(struct grpc_experimental_completion_queue_functor*, int);
 
-  /** The following fields are not API. It is meant for internal use */
+  /** The following fields are not API. They are meant for internal use */
   int internal_success;
   struct grpc_experimental_completion_queue_functor* internal_next;
 } grpc_experimental_completion_queue_functor;

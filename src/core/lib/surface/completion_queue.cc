@@ -868,7 +868,12 @@ static void cq_end_op_for_callback(
   GRPC_ERROR_UNREF(error);
 
   auto* functor = static_cast<grpc_experimental_completion_queue_functor*>(tag);
-  grpc_core::ApplicationCallbackExecCtx::Enqueue(functor, is_success);
+  if (functor->functor_inline != nullptr) {
+    (*functor->functor_inline)(functor, is_success);
+  }
+  if (functor->functor_deferred != nullptr) {
+    grpc_core::ApplicationCallbackExecCtx::Enqueue(functor, is_success);
+  }
 }
 
 void grpc_cq_end_op(grpc_completion_queue* cq, void* tag, grpc_error* error,
@@ -1352,7 +1357,12 @@ static void cq_finish_shutdown_callback(grpc_completion_queue* cq) {
   GPR_ASSERT(cqd->shutdown_called);
 
   cq->poller_vtable->shutdown(POLLSET_FROM_CQ(cq), &cq->pollset_shutdown_done);
-  grpc_core::ApplicationCallbackExecCtx::Enqueue(callback, true);
+  if (callback->functor_inline != nullptr) {
+    (*callback->functor_inline)(callback, is_success);
+  }
+  if (callback->functor_deferred != nullptr) {
+    grpc_core::ApplicationCallbackExecCtx::Enqueue(callback, true);
+  }
 }
 
 static void cq_shutdown_callback(grpc_completion_queue* cq) {

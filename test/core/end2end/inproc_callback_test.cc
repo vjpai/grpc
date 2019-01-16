@@ -40,7 +40,8 @@ template <typename F>
 class CQDeletingCallback : public grpc_experimental_completion_queue_functor {
  public:
   explicit CQDeletingCallback(F f) : func_(f) {
-    functor_run = &CQDeletingCallback::Run;
+    functor_inline = nullptr;
+    functor_deferred = &CQDeletingCallback::Run;
   }
   ~CQDeletingCallback() {}
   static void Run(grpc_experimental_completion_queue_functor* cb, int ok) {
@@ -61,7 +62,8 @@ grpc_experimental_completion_queue_functor* NewDeletingCallback(F f) {
 class ShutdownCallback : public grpc_experimental_completion_queue_functor {
  public:
   ShutdownCallback() : done_(false) {
-    functor_run = &ShutdownCallback::StaticRun;
+    functor_inline = &ShutdownCallback::StaticRun;
+    functor_deferred = nullptr;
     gpr_mu_init(&mu_);
     gpr_cv_init(&cv_);
   }

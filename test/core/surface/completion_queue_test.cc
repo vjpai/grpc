@@ -372,7 +372,8 @@ static void test_callback(void) {
   class ShutdownCallback : public grpc_experimental_completion_queue_functor {
    public:
     ShutdownCallback(bool* done) : done_(done) {
-      functor_run = &ShutdownCallback::Run;
+      functor_inline = &ShutdownCallback::Run;
+      functor_deferred = nullptr;
     }
     ~ShutdownCallback() {}
     static void Run(grpc_experimental_completion_queue_functor* cb, int ok) {
@@ -402,7 +403,8 @@ static void test_callback(void) {
       class TagCallback : public grpc_experimental_completion_queue_functor {
        public:
         TagCallback(int* counter, int tag) : counter_(counter), tag_(tag) {
-          functor_run = &TagCallback::Run;
+          functor_inline = nullptr;
+          functor_deferred = &TagCallback::Run;
         }
         ~TagCallback() {}
         static void Run(grpc_experimental_completion_queue_functor* cb,

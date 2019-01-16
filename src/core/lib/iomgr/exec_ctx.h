@@ -246,7 +246,7 @@ class ApplicationCallbackExecCtx {
         if (f->internal_next == nullptr) {
           tail_ = nullptr;
         }
-        (*f->functor_run)(f, f->internal_success);
+        (*f->functor_deferred)(f, f->internal_success);
       }
       gpr_tls_set(&callback_exec_ctx_, reinterpret_cast<intptr_t>(nullptr));
     } else {
