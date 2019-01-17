@@ -273,7 +273,7 @@ class ClientCallbackReaderWriterImpl
     // 5. See if the call can finish (if other callbacks were triggered already)
     started_ = true;
 
-    start_tag_.Set(call_.call(),
+    start_tag_.Set(call_.call(), nullptr,
                    [this](bool ok) {
                      reactor_->OnReadInitialMetadataDone(ok);
                      MaybeFinish();
@@ -289,7 +289,7 @@ class ClientCallbackReaderWriterImpl
 
     // Also set up the read and write tags so that they don't have to be set up
     // each time
-    write_tag_.Set(call_.call(),
+    write_tag_.Set(call_.call(), nullptr,
                    [this](bool ok) {
                      reactor_->OnWriteDone(ok);
                      MaybeFinish();
@@ -297,7 +297,7 @@ class ClientCallbackReaderWriterImpl
                    &write_ops_);
     write_ops_.set_core_cq_tag(&write_tag_);
 
-    read_tag_.Set(call_.call(),
+    read_tag_.Set(call_.call(), nullptr,
                   [this](bool ok) {
                     reactor_->OnReadDone(ok);
                     MaybeFinish();
@@ -308,7 +308,7 @@ class ClientCallbackReaderWriterImpl
       call_.PerformOps(&read_ops_);
     }
 
-    finish_tag_.Set(call_.call(), [this](bool ok) { MaybeFinish(); },
+    finish_tag_.Set(call_.call(), nullptr, [this](bool ok) { MaybeFinish(); },
                     &finish_ops_);
     finish_ops_.ClientRecvStatus(context_, &finish_status_);
     finish_ops_.set_core_cq_tag(&finish_tag_);
@@ -361,7 +361,7 @@ class ClientCallbackReaderWriterImpl
       start_corked_ = false;
     }
     writes_done_ops_.ClientSendClose();
-    writes_done_tag_.Set(call_.call(),
+    writes_done_tag_.Set(call_.call(), nullptr,
                          [this](bool ok) {
                            reactor_->OnWritesDoneDone(ok);
                            MaybeFinish();
@@ -461,6 +461,20 @@ class ClientCallbackReaderImpl
       g_core_codegen_interface->grpc_call_unref(call);
       reactor->OnDone(s);
     }
+  bool MaybeFinishInline() {
+    if (--callbacks_outstanding_ == 0) {
+      Status s = std::move(finish_status_);
+      auto* reactor = reactor_;
+      auto* call = call_.call();
+      this->~ClientCallbackReaderImpl();
+      g_core_codegen_interface->grpc_call_unref(call);
+      return true;
+    }
+    return false;
+  }
+  bool MaybeFinishInline() {
+      reactor->OnDone(s);
+    }
   }
 
   void StartCall() override {
@@ -471,7 +485,7 @@ class ClientCallbackReaderImpl
     // 4. See if the call can finish (if other callbacks were triggered already)
     started_ = true;
 
-    start_tag_.Set(call_.call(),
+    start_tag_.Set(call_.call(), nullptr,
                    [this](bool ok) {
                      reactor_->OnReadInitialMetadataDone(ok);
                      MaybeFinish();
@@ -484,7 +498,7 @@ class ClientCallbackReaderImpl
     call_.PerformOps(&start_ops_);
 
     // Also set up the read tag so it doesn't have to be set up each time
-    read_tag_.Set(call_.call(),
+    read_tag_.Set(call_.call(), nullptr,
                   [this](bool ok) {
                     reactor_->OnReadDone(ok);
                     MaybeFinish();

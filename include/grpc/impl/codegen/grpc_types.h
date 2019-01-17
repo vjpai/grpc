@@ -680,19 +680,22 @@ typedef enum {
     Its "run" value should be assigned to some non-member function, such as
     a static method. */
 typedef struct grpc_experimental_completion_queue_functor {
-  /** The run member specifies two functions that will be called when this tag
-      is extracted from the completion queue. The first is called inline, and
-      the second is called "deferred," at the point of the next exit from gRPC
-      core. The inline one should be used for library code that is tightly
-      controlled, and the deferred one should be used for user code (or library
-      code that can trigger other operations on RPCs). The in arguments will be
-      a pointer to this functor and a boolean that indicates whether the
-      operation succeeded (non-zero) or failed (zero). Either function pointer
-      can be NULL if they are not relevant. The return value of the inline
-      function is whether to actually perform the deferred callback.
-      The out argument (last argument) of the inline function is the new
-      success value to pass to the deferred function */
-  int (*functor_inline)(struct grpc_experimental_completion_queue_functor*, int, int*);
+  /** The run member specifies two functions that will be called when
+      this tag is extracted from the completion queue. The first is
+      called inline, and the second is called "deferred," at the point
+      of the next exit from gRPC core. The inline one should be used
+      for library code that is tightly controlled, and the deferred
+      one should be used for user code (or library code that can
+      trigger other operations on RPCs). The in arguments will be a
+      pointer to this functor and a boolean that indicates whether the
+      operation succeeded (non-zero) or failed (zero). Either function
+      pointer can be NULL if they are not relevant. The return value
+      of the inline function is whether to actually perform the
+      deferred callback.  The in-out argument (last argument) of the
+      inline function is where the inline function can get the success
+      value passed to it and fill in a new success value to pass to
+      the deferred function */
+  int (*functor_inline)(struct grpc_experimental_completion_queue_functor*, int*);
   void (*functor_deferred)(struct grpc_experimental_completion_queue_functor*, int);
 
   /** The following fields are not API. They are meant for internal use */

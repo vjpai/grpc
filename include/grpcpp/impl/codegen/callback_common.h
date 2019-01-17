@@ -155,7 +155,7 @@ class CallbackWithSuccessTag
   // Set can only be called on a default-constructed or Clear'ed tag.
   // It should never be called on a tag that was constructed with arguments
   // or on a tag that has been Set before unless the tag has been cleared.
-  void Set(grpc_call* call, std::function<void(bool)> func_inline,
+  void Set(grpc_call* call, std::function<bool(bool)> func_inline,
            std::function<void(bool)> func_deferred,
            CompletionQueueTag* ops) {
     GPR_CODEGEN_ASSERT(call_ == nullptr);
@@ -185,28 +185,35 @@ class CallbackWithSuccessTag
 
  private:
   grpc_call* call_;
-  std::function<void(bool)> func_inline_;
+  std::function<bool(bool)> func_inline_;
   std::function<void(bool)> func_deferred_;
   CompletionQueueTag* ops_;
 
   static int StaticInlineRun(grpc_experimental_completion_queue_functor* cb,
-                             int ok, int* new_ok) {
-    return static_cast<CallbackWithSuccessTag*>(cb)->InlineRun(static_cast<bool>(ok),);
+                             int* ok) {
+    return static_cast<CallbackWithSuccessTag*>(cb)->InlineRun(ok);
   }
-  int InlineRun(bool ok, int* new_ok ) {
+  int InlineRun(int* ok) {
     void* ignored = ops_;
     // Allow a "false" return value from FinalizeResult to silence the
     // callback, just as it silences a CQ tag in the async cases
     auto* ops = ops_;
-    bool do_callback = ops_->FinalizeResult(&ignored, &ok);
+    bool new_ok = static_cast<bool>(*ok);
+    bool do_callback = ops_->FinalizeResult(&ignored, &new_ok);
     GPR_CODEGEN_ASSERT(ignored == ops);
 
     if (do_callback) {
-      CatchingCallback(func_inline_, ok);
+      CatchingCallback(func_inline_, new_ok);
     }
-    return ok;
+    *ok = static_cast<int>(new_ok);
+    return do_callback;
   }
-  int DeferredRun(bool ok) {
+  static void StaticDeferredRun(grpc_experimental_completion_queue_functor* cb,
+				int ok) {
+    return static_cast<CallbackWithSuccessTag*>(cb)->DeferredRun(static_cast<bool>(ok));
+  }
+  void DeferredRun(bool ok) {
+    CatchingCallback(func_deferred_, ok);
   }
 };
 

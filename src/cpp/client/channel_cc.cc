@@ -218,17 +218,18 @@ bool Channel::WaitForStateChangeImpl(grpc_connectivity_state last_observed,
 namespace {
 class ShutdownCallback : public grpc_experimental_completion_queue_functor {
  public:
-  ShutdownCallback() { functor_run = &ShutdownCallback::Run; }
+  ShutdownCallback() { functor_inline = &ShutdownCallback::Run; functor_deferred = nullptr; }
   // TakeCQ takes ownership of the cq into the shutdown callback
   // so that the shutdown callback will be responsible for destroying it
   void TakeCQ(CompletionQueue* cq) { cq_ = cq; }
 
   // The Run function will get invoked by the completion queue library
   // when the shutdown is actually complete
-  static void Run(grpc_experimental_completion_queue_functor* cb, int) {
+  static int Run(grpc_experimental_completion_queue_functor* cb, int*) {
     auto* callback = static_cast<ShutdownCallback*>(cb);
     delete callback->cq_;
     delete callback;
+    return true;
   }
 
  private:

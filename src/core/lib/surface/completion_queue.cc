@@ -868,11 +868,15 @@ static void cq_end_op_for_callback(
   GRPC_ERROR_UNREF(error);
 
   auto* functor = static_cast<grpc_experimental_completion_queue_functor*>(tag);
+  bool run_deferred;
+  functor->internal_success = is_success;
   if (functor->functor_inline != nullptr) {
-    (*functor->functor_inline)(functor, is_success);
+    run_deferred = (*functor->functor_inline)(functor, &functor->internal_success);
+  } else {
+    run_deferred = true;
   }
-  if (functor->functor_deferred != nullptr) {
-    grpc_core::ApplicationCallbackExecCtx::Enqueue(functor, is_success);
+  if (run_deferred && functor->functor_deferred != nullptr) {
+    grpc_core::ApplicationCallbackExecCtx::Enqueue(functor);
   }
 }
 
@@ -1357,11 +1361,15 @@ static void cq_finish_shutdown_callback(grpc_completion_queue* cq) {
   GPR_ASSERT(cqd->shutdown_called);
 
   cq->poller_vtable->shutdown(POLLSET_FROM_CQ(cq), &cq->pollset_shutdown_done);
+  bool run_deferred ;
+  callback->internal_success = true;
   if (callback->functor_inline != nullptr) {
-    (*callback->functor_inline)(callback, is_success);
-  }
-  if (callback->functor_deferred != nullptr) {
-    grpc_core::ApplicationCallbackExecCtx::Enqueue(callback, true);
+    run_deferred = (*callback->functor_inline)(callback, &callback->internal_success);
+  } else {
+    run_deferred = true;
+  }  
+  if (run_deferred && callback->functor_deferred != nullptr) {
+    grpc_core::ApplicationCallbackExecCtx::Enqueue(callback);
   }
 }
 

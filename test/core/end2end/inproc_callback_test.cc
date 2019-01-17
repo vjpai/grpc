@@ -68,12 +68,13 @@ class ShutdownCallback : public grpc_experimental_completion_queue_functor {
     gpr_cv_init(&cv_);
   }
   ~ShutdownCallback() {}
-  static void StaticRun(grpc_experimental_completion_queue_functor* cb,
+  static int StaticRun(grpc_experimental_completion_queue_functor* cb,
                         int ok) {
     auto* callback = static_cast<ShutdownCallback*>(cb);
-    callback->Run(static_cast<bool>(ok));
+    callback->Run();
+    return true;
   }
-  void Run(bool ok) {
+  void Run() {
     gpr_log(GPR_DEBUG, "CQ shutdown notification invoked");
     gpr_mu_lock(&mu_);
     done_ = true;

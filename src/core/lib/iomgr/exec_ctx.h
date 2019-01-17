@@ -255,9 +255,8 @@ class ApplicationCallbackExecCtx {
     }
     grpc_core::Fork::DecExecCtxCount();
   }
-  static void Enqueue(grpc_experimental_completion_queue_functor* functor,
-                      int is_success) {
-    functor->internal_success = is_success;
+  // functor->internal_success must be set before reaching here
+  static void Enqueue(grpc_experimental_completion_queue_functor* functor) {
     functor->internal_next = nullptr;
 
     auto* ctx = reinterpret_cast<ApplicationCallbackExecCtx*>(
