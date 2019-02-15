@@ -1084,6 +1084,69 @@ TEST_P(ClientCallbackEnd2endTest, SimultaneousReadAndWritesDone) {
   test.Await();
 }
 
+TEST_P(ClientCallbackEnd2endTest, BidiStreamWithHold) {
+  MAYBE_SKIP_TEST;
+  ResetStub();
+  class Client : public grpc::experimental::ClientBidiReactor<EchoRequest,
+                                                              EchoResponse> {
+   public:
+    explicit Client(grpc::testing::EchoTestService::Stub* stub) {
+      request_.set_message("Hello fren ");
+      stub->experimental_async()->BidiStream(&context_, this);
+      AddHold();
+      StartCall();
+      StartRead(&response_);
+      StartWrite(&request_);
+    }
+    void OnReadDone(bool ok) override {
+      if (!ok) {
+        EXPECT_EQ(reads_complete_, kServerDefaultResponseStreamsToSend);
+      } else {
+        EXPECT_LE(reads_complete_, kServerDefaultResponseStreamsToSend);
+        EXPECT_EQ(response_.message(), request_.message());
+        reads_complete_++;
+        StartRead(&response_);
+      }
+    }
+    void OnWriteDone(bool ok) override {
+      EXPECT_TRUE(ok);
+      if (++writes_complete_ == kServerDefaultResponseStreamsToSend) {
+        StartWritesDone();
+      } else {
+        StartWrite(&request_);
+      }
+    }
+    void OnWritesDoneDone(bool ok) override {
+      EXPECT_TRUE(ok);
+      ReleaseHold();
+    }
+    void OnDone(const Status& s) override {
+      EXPECT_TRUE(s.ok());
+      std::unique_lock<std::mutex> l(mu_);
+      done_ = true;
+      cv_.notify_one();
+    }
+    void Await() {
+      std::unique_lock<std::mutex> l(mu_);
+      while (!done_) {
+        cv_.wait(l);
+      }
+    }
+
+   private:
+    EchoRequest request_;
+    EchoResponse response_;
+    ClientContext context_;
+    int reads_complete_{0};
+    int writes_complete_{0};
+    std::mutex mu_;
+    std::condition_variable cv_;
+    bool done_ = false;
+  } test{stub_.get()};
+
+  test.Await();
+}
+
 std::vector<TestScenario> CreateTestScenarios(bool test_insecure) {
   std::vector<TestScenario> scenarios;
   std::vector<grpc::string> credentials_types{

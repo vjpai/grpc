@@ -112,6 +112,8 @@ class ClientCallbackReaderWriter {
   virtual void Write(const Request* req, WriteOptions options) = 0;
   virtual void WritesDone() = 0;
   virtual void Read(Response* resp) = 0;
+  virtual void AddHold(int holds) = 0;
+  virtual void ReleaseHold() = 0;
 
  protected:
   void BindReactor(ClientBidiReactor<Request, Response>* reactor) {
@@ -125,6 +127,8 @@ class ClientCallbackReader {
   virtual ~ClientCallbackReader() {}
   virtual void StartCall() = 0;
   virtual void Read(Response* resp) = 0;
+  virtual void AddHold(int holds) = 0;
+  virtual void ReleaseHold() = 0;
 
  protected:
   void BindReactor(ClientReadReactor<Response>* reactor) {
@@ -143,6 +147,9 @@ class ClientCallbackWriter {
     Write(req, options.set_last_message());
   }
   virtual void WritesDone() = 0;
+
+  virtual void AddHold(int holds) = 0;
+  virtual void ReleaseHold() = 0;
 
  protected:
   void BindReactor(ClientWriteReactor<Request>* reactor) {
@@ -174,6 +181,9 @@ class ClientBidiReactor {
   }
   void StartWritesDone() { stream_->WritesDone(); }
 
+  void AddHold(int holds = 1) { stream_->AddHold(holds); }
+  void ReleaseHold() { stream_->ReleaseHold(); }
+
  private:
   friend class ClientCallbackReaderWriter<Request, Response>;
   void BindStream(ClientCallbackReaderWriter<Request, Response>* stream) {
@@ -192,6 +202,9 @@ class ClientReadReactor {
 
   void StartCall() { reader_->StartCall(); }
   void StartRead(Response* resp) { reader_->Read(resp); }
+
+  void AddHold(int holds = 1) { reader_->AddHold(holds); }
+  void ReleaseHold() { reader_->ReleaseHold(); }
 
  private:
   friend class ClientCallbackReader<Response>;
@@ -217,6 +230,9 @@ class ClientWriteReactor {
     StartWrite(req, std::move(options.set_last_message()));
   }
   void StartWritesDone() { writer_->WritesDone(); }
+
+  void AddHold(int holds = 1) { writer_->AddHold(holds); }
+  void ReleaseHold() { writer_->ReleaseHold(); }
 
  private:
   friend class ClientCallbackWriter<Request>;
@@ -374,6 +390,9 @@ class ClientCallbackReaderWriterImpl
     }
   }
 
+  virtual void AddHold(int holds) override { callbacks_outstanding_ += holds; }
+  virtual void ReleaseHold() override { MaybeFinish(); }
+
  private:
   friend class ClientCallbackReaderWriterFactory<Request, Response>;
 
@@ -508,6 +527,9 @@ class ClientCallbackReaderImpl
       read_ops_at_start_ = true;
     }
   }
+
+  virtual void AddHold(int holds) override { callbacks_outstanding_ += holds; }
+  virtual void ReleaseHold() override { MaybeFinish(); }
 
  private:
   friend class ClientCallbackReaderFactory<Response>;
@@ -676,6 +698,9 @@ class ClientCallbackWriterImpl
       writes_done_ops_at_start_ = true;
     }
   }
+
+  virtual void AddHold(int holds) override { callbacks_outstanding_ += holds; }
+  virtual void ReleaseHold() override { MaybeFinish(); }
 
  private:
   friend class ClientCallbackWriterFactory<Request>;
