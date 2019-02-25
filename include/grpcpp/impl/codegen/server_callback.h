@@ -284,14 +284,13 @@ class CallbackUnaryHandler : public MethodHandler {
                     Status* status) final {
     ByteBuffer buf;
     buf.set_buffer(req);
-    auto* request = new (g_core_codegen_interface->grpc_call_arena_alloc(
-        call, sizeof(RequestType))) RequestType();
+    auto* request = new RequestType;
     *status = SerializationTraits<RequestType>::Deserialize(&buf, request);
     buf.Release();
     if (status->ok()) {
       return request;
     }
-    request->~RequestType();
+    delete request;
     return nullptr;
   }
 
@@ -574,14 +573,13 @@ class CallbackServerStreamingHandler : public MethodHandler {
                     Status* status) final {
     ByteBuffer buf;
     buf.set_buffer(req);
-    auto* request = new (g_core_codegen_interface->grpc_call_arena_alloc(
-        call, sizeof(RequestType))) RequestType();
+    auto* request = new RequestType;
     *status = SerializationTraits<RequestType>::Deserialize(&buf, request);
     buf.Release();
     if (status->ok()) {
       return request;
     }
-    request->~RequestType();
+    delete request;
     return nullptr;
   }
 
