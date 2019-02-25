@@ -307,7 +307,11 @@ class CallbackUnaryHandler : public MethodHandler {
       : public experimental::ServerCallbackRpcController {
    public:
     void Finish(Status s) override {
-      finish_tag_.Set(call_.call(), [this](bool) { MaybeDone(); },
+      finish_tag_.Set(call_.call(),
+                      [this](bool) {
+                        gpr_log(GPR_INFO, "Finishing unary call");
+                        MaybeDone();
+                      },
                       &finish_ops_);
       if (!ctx_->sent_initial_metadata_) {
         finish_ops_.SendInitialMetadata(&ctx_->initial_metadata_,
