@@ -344,7 +344,7 @@ TEST_P(ClientCallbackEnd2endTest, SimpleRpc) {
 TEST_P(ClientCallbackEnd2endTest, SequentialRpcs) {
   MAYBE_SKIP_TEST;
   ResetStub();
-  SendRpcs(10, false);
+  SendRpcs(1000, false);
 }
 
 TEST_P(ClientCallbackEnd2endTest, SendClientInitialMetadata) {
