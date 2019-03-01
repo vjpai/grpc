@@ -529,6 +529,7 @@ Status TestServiceImpl::BidiStream(
     response.set_message(request.message());
     if (read_counts == server_write_last) {
       stream->WriteLast(response, WriteOptions());
+      break;
     } else {
       stream->Write(response);
     }
@@ -792,8 +793,8 @@ CallbackTestServiceImpl::BidiStream() {
     void FinishOnce(const Status& s) {
       std::lock_guard<std::mutex> l(finish_mu_);
       if (!finished_) {
-        Finish(s);
         finished_ = true;
+        Finish(s);
       }
     }
 

@@ -17,6 +17,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -1087,20 +1088,21 @@ TEST_P(ClientCallbackEnd2endTest, SimultaneousReadAndWritesDone) {
 TEST_P(ClientCallbackEnd2endTest, BidiStreamWithHold) {
   MAYBE_SKIP_TEST;
   ResetStub();
+  int server_read_limit = 3;
   class Client : public grpc::experimental::ClientBidiReactor<EchoRequest,
                                                               EchoResponse> {
    public:
-    explicit Client(grpc::testing::EchoTestService::Stub* stub) {
-      request_.set_message("Hello fren ");
+    explicit Client(grpc::testing::EchoTestService::Stub* stub,
+                    int server_reads)
+        : server_read_limit_(server_reads) {
+      context_.AddMetadata(kServerFinishAfterNReads,
+                           std::to_string(server_reads));
       stub->experimental_async()->BidiStream(&context_, this);
-      AddHold();
-      StartCall();
       StartRead(&response_);
-      StartWrite(&request_);
     }
     void OnReadDone(bool ok) override {
       if (!ok) {
-        EXPECT_EQ(reads_complete_, kServerDefaultResponseStreamsToSend);
+        EXPECT_EQ(reads_complete_, server_read_limit_);
       } else {
         EXPECT_LE(reads_complete_, kServerDefaultResponseStreamsToSend);
         EXPECT_EQ(response_.message(), request_.message());
@@ -1109,23 +1111,30 @@ TEST_P(ClientCallbackEnd2endTest, BidiStreamWithHold) {
       }
     }
     void OnWriteDone(bool ok) override {
-      EXPECT_TRUE(ok);
-      if (++writes_complete_ == kServerDefaultResponseStreamsToSend) {
-        StartWritesDone();
+      if (!ok) {
+        stop_writing_ = true;
       } else {
-        StartWrite(&request_);
+        writes_complete_++;
+        cts_ = true;
       }
-    }
-    void OnWritesDoneDone(bool ok) override {
-      EXPECT_TRUE(ok);
-      ReleaseHold();
     }
     void OnDone(const Status& s) override {
       EXPECT_TRUE(s.ok());
+      EXPECT_EQ(reads_complete_, server_read_limit_);
+      EXPECT_EQ(writes_complete_, server_read_limit_);
+      EXPECT_TRUE(stop_writing_);
       std::unique_lock<std::mutex> l(mu_);
       done_ = true;
       cv_.notify_one();
     }
+    void Write(const std::string& msg) {
+      gpr_log(GPR_INFO, "Want to write %s", msg.c_str());
+      cts_ = false;
+      request_.set_message(msg);
+      StartWrite(&request_);
+    }
+    bool StopWriting() { return stop_writing_; }
+    bool ClearToSend() { return cts_; }
     void Await() {
       std::unique_lock<std::mutex> l(mu_);
       while (!done_) {
@@ -1137,14 +1146,34 @@ TEST_P(ClientCallbackEnd2endTest, BidiStreamWithHold) {
     EchoRequest request_;
     EchoResponse response_;
     ClientContext context_;
+    int server_read_limit_;
     int reads_complete_{0};
     int writes_complete_{0};
     std::mutex mu_;
     std::condition_variable cv_;
     bool done_ = false;
-  } test{stub_.get()};
+    std::atomic_bool stop_writing_{false};
+    std::atomic_bool cts_{true};
+  } test{stub_.get(), server_read_limit};
+
+  int counter = 10;
+  test.AddHold();
+  test.Write(std::to_string(counter));
+  test.StartCall();
+  std::thread test_thread([&counter, &test] {
+    while (!test.StopWriting()) {
+      counter += 10;
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      gpr_log(GPR_INFO, "Counter is now %d", counter);
+      if (test.ClearToSend()) {
+        test.Write(std::to_string(counter));
+      }
+    }
+    test.ReleaseHold();
+  });
 
   test.Await();
+  test_thread.join();
 }
 
 std::vector<TestScenario> CreateTestScenarios(bool test_insecure) {
