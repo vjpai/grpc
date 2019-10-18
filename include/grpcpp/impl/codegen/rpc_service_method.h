@@ -117,12 +117,15 @@ class RpcServiceMethod : public RpcMethod {
       // this is not an error condition, as it allows users to declare a server
       // like WithRawMethod_foo<AsyncService>. However since it
       // overwrites behavior, it should be logged.
-      gpr_log(
-          GPR_INFO,
-          "You are marking method %s as '%s', even though it was "
-          "previously marked '%s'. This behavior will overwrite the original "
-          "behavior. If you expected this then ignore this message.",
-          name(), TypeToString(api_type_), TypeToString(type));
+      grpc::string messge = "You are marking method ";
+      message += name();
+      message += " as '";
+      message += TypeToString(api_type_);
+      message += "', even though it was previously marked '";
+      message += TypeToString(type);
+      message += "'. This behavior will overwrite the original behavior. If "
+                 "you expected this, then ignore this message.";
+      g_core_codegen_interface->gpr_log_message(GPR_INFO, message);
     }
     api_type_ = type;
   }

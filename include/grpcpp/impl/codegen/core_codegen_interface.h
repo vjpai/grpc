@@ -22,6 +22,7 @@
 #include <grpc/impl/codegen/byte_buffer.h>
 #include <grpc/impl/codegen/byte_buffer_reader.h>
 #include <grpc/impl/codegen/grpc_types.h>
+#include <grpc/impl/codegen/log.h>
 #include <grpc/impl/codegen/sync.h>
 #include <grpcpp/impl/codegen/config.h>
 #include <grpcpp/impl/codegen/status.h>
@@ -138,6 +139,7 @@ class CoreCodegenInterface {
 
   virtual gpr_timespec gpr_inf_future(gpr_clock_type type) = 0;
   virtual gpr_timespec gpr_time_0(gpr_clock_type type) = 0;
+  virtual void gpr_log_message(const char* file, int line, gpr_log_severity severity, const char* message) = 0;
 };
 
 extern CoreCodegenInterface* g_core_codegen_interface;

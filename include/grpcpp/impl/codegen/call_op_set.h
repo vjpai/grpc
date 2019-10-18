@@ -942,8 +942,11 @@ class CallOpSet : public CallOpSetInterface,
       // A failure here indicates an API misuse; for example, doing a Write
       // while another Write is already pending on the same RPC or invoking
       // WritesDone multiple times
-      gpr_log(GPR_ERROR, "API misuse of type %s observed",
-              g_core_codegen_interface->grpc_call_error_to_string(err));
+      grpc::string message = "API misuse observed of type ";
+      message += g_core_codegen_interface->grpc_call_error_to_string(err);
+      message += "\n";
+
+      g_core_codegen_interface->gpr_log_message(GPR_ERROR, message);
       GPR_CODEGEN_ASSERT(false);
     }
   }

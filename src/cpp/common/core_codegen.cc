@@ -237,4 +237,8 @@ void CoreCodegen::assert_fail(const char* failed_assertion, const char* file,
   abort();
 }
 
+void gpr_log_message(const char* file, int line, gpr_log_severity severity, const char* message) {
+  return ::gpr_log_message(file, line, severity, message);
+}
+
 }  // namespace grpc
