@@ -235,11 +235,13 @@ class Server : public grpc::ServerInterface, private grpc::GrpcLibraryCodegen {
   class UnimplementedAsyncRequest;
   class UnimplementedAsyncResponse;
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
   /// SyncRequestThreadManager is an implementation of ThreadManager. This class
   /// is responsible for polling for incoming RPCs and calling the RPC handlers.
   /// This is only used in case of a Sync server (i.e a server exposing a sync
   /// interface)
   class SyncRequestThreadManager;
+#endif
 
   /// Register a generic service. This call does not take ownership of the
   /// service. The service must exist for the lifetime of the Server instance.
@@ -308,6 +310,7 @@ class Server : public grpc::ServerInterface, private grpc::GrpcLibraryCodegen {
 
   const int max_receive_message_size_;
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
   /// The following completion queues are ONLY used in case of Sync API
   /// i.e. if the server has any services with sync methods. The server uses
   /// these completion queues to poll for new RPCs
@@ -317,6 +320,7 @@ class Server : public grpc::ServerInterface, private grpc::GrpcLibraryCodegen {
   /// List of \a ThreadManager instances (one for each cq in
   /// the \a sync_server_cqs)
   std::vector<std::unique_ptr<SyncRequestThreadManager>> sync_req_mgrs_;
+#endif
 
   // Outstanding unmatched callback requests, indexed by method.
   // NOTE: Using a gpr_atm rather than atomic_int because atomic_int isn't

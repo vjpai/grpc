@@ -16,6 +16,7 @@
  *
  */
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
 #include "src/cpp/thread_manager/thread_manager.h"
 
 #include <climits>
@@ -261,3 +262,4 @@ void ThreadManager::MainWorkLoop() {
 }
 
 }  // namespace grpc
+#endif  // GRPC_CALLBACK_API_NONEXPERIMENTAL

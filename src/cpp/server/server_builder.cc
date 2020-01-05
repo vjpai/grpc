@@ -279,6 +279,9 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
   // This is different from the completion queues added to the server via
   // ServerBuilder's AddCompletionQueue() method (those completion queues
   // are in 'cqs_' member variable of ServerBuilder object)
+  //
+  // TODO(vjpai): Remove this variable and its use when sync API implemented
+  //              fully under callback API for all platforms and variants.
   std::shared_ptr<std::vector<std::unique_ptr<ServerCompletionQueue>>>
       sync_server_cqs(std::make_shared<
                       std::vector<std::unique_ptr<ServerCompletionQueue>>>());
@@ -303,6 +306,7 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
 
   const bool is_hybrid_server = has_sync_methods && has_frequently_polled_cqs;
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
   if (has_sync_methods) {
     grpc_cq_polling_type polling_type =
         is_hybrid_server ? GRPC_CQ_NON_POLLING : GRPC_CQ_DEFAULT_POLLING;
@@ -313,6 +317,7 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
           new ServerCompletionQueue(GRPC_CQ_NEXT, polling_type, nullptr));
     }
   }
+#endif
 
   // TODO(vjpai): Add a section here for plugins once they can support callback
   // methods
@@ -344,11 +349,13 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
   //     server
   //  2. cqs_: Completion queues added via AddCompletionQueue() call
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
   for (const auto& value : *sync_server_cqs) {
     grpc_server_register_completion_queue(server->server_, value->cq(),
                                           nullptr);
     has_frequently_polled_cqs = true;
   }
+#endif
 
   if (has_callback_methods || callback_generic_service_ != nullptr) {
     auto* cq = server->CallbackCQ();

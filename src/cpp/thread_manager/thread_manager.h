@@ -19,6 +19,7 @@
 #ifndef GRPC_INTERNAL_CPP_THREAD_MANAGER_H
 #define GRPC_INTERNAL_CPP_THREAD_MANAGER_H
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
 #include <list>
 #include <memory>
 
@@ -177,5 +178,7 @@ class ThreadManager {
 };
 
 }  // namespace grpc
+
+#endif  // GRPC_CALLBACK_API_NONEXPERIMENTAL
 
 #endif  // GRPC_INTERNAL_CPP_THREAD_MANAGER_H

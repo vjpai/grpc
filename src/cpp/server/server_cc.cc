@@ -840,6 +840,7 @@ const char* Server::CallbackRequest<
   return ctx_.method().c_str();
 }
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
 // Implementation of ThreadManager. Each instance of SyncRequestThreadManager
 // manages a pool of threads that poll for incoming Sync RPCs and call the
 // appropriate RPC handlers
@@ -961,6 +962,7 @@ class Server::SyncRequestThreadManager : public grpc::ThreadManager {
   std::unique_ptr<grpc::internal::RpcServiceMethod> unknown_method_;
   std::shared_ptr<Server::GlobalCallbacks> global_callbacks_;
 };
+#endif
 
 static grpc::internal::GrpcLibraryInitializer g_gli_initializer;
 Server::Server(
@@ -977,7 +979,9 @@ Server::Server(
     : acceptors_(std::move(acceptors)),
       interceptor_creators_(std::move(interceptor_creators)),
       max_receive_message_size_(max_receive_message_size),
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
       sync_server_cqs_(std::move(sync_server_cqs)),
+#endif
       started_(false),
       shutdown_(false),
       shutdown_notified_(false),
@@ -1039,11 +1043,13 @@ Server::~Server() {
     if (started_ && !shutdown_) {
       lock.Unlock();
       Shutdown();
-    } else if (!started_) {
+    } else if (!started_) {      
       // Shutdown the completion queues
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL      
       for (const auto& value : sync_req_mgrs_) {
         value->Shutdown();
       }
+#endif
       if (callback_cq_ != nullptr) {
         callback_cq_->Shutdown();
         callback_cq_ = nullptr;
@@ -1313,6 +1319,7 @@ void Server::ShutdownInternal(gpr_timespec deadline) {
   // Else in case of SHUTDOWN or GOT_EVENT, it means that the server has
   // successfully shutdown
 
+#ifndef GRPC_CALLBACK_API_NONEXPERIMENTAL
   // Shutdown all ThreadManagers. This will try to gracefully stop all the
   // threads in the ThreadManagers (once they process any inflight requests)
   for (const auto& value : sync_req_mgrs_) {
@@ -1323,6 +1330,7 @@ void Server::ShutdownInternal(gpr_timespec deadline) {
   for (const auto& value : sync_req_mgrs_) {
     value->Wait();
   }
+#endif
 
   // Wait for all outstanding callback requests to complete
   // (whether waiting for a match or already active).
